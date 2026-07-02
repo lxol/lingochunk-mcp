@@ -27,7 +27,7 @@ export class LingoChunkClient {
   constructor(private readonly config: Config) {}
 
   private buildUrl(path: string, params?: Record<string, QueryValue>): URL {
-    const url = new URL(`${this.config.apiBaseUrl}/api/v1${path}`);
+    const url = new URL(`${this.config.baseUrl}/api/v1${path}`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined && value !== null && value !== "") {

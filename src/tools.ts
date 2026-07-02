@@ -20,8 +20,8 @@ function errorResult(err: unknown): CallToolResult {
       text += "\nCheck LINGOCHUNK_TOKEN is a valid, un-revoked token (prefix lcp_).";
     } else if (err.status === 403) {
       text +=
-        "\nThe token is missing the scope this tool needs. Recreate it in " +
-        "LingoChunk settings with the required scope.";
+        "\nThe token lacks the scope named above. Mint a new token in " +
+        "LingoChunk settings that includes it.";
     } else if (err.status === 429 && err.retryAfter !== undefined) {
       text += `\nRate limited; retry after ${err.retryAfter}s.`;
     }
@@ -236,21 +236,16 @@ export function registerTools(
     async ({ submission_id, start, end }) =>
       runResult(async () => {
         const clip = await client.getAudioClip(submission_id, start, end);
-        await fs.mkdir(config.outputDir, { recursive: true });
-        const startMs = Math.round(start * 1000);
-        const endMs = Math.round(end * 1000);
-        const filename = `${sanitise(submission_id)}-${startMs}-${endMs}${extensionFor(
+        await fs.mkdir(config.clipDir, { recursive: true });
+        const filename = `clip-${sanitise(submission_id)}-${start}-${end}${extensionFor(
           clip.contentType,
         )}`;
-        const filePath = path.join(config.outputDir, filename);
+        const filePath = path.join(config.clipDir, filename);
         await fs.writeFile(filePath, clip.data);
         return jsonResult({
           path: filePath,
-          bytes: clip.data.byteLength,
-          content_type: clip.contentType,
-          submission_id,
-          start,
-          end,
+          media_type: clip.contentType,
+          size_bytes: clip.data.byteLength,
         });
       }),
   );
