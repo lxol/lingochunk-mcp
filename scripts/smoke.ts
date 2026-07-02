@@ -8,45 +8,63 @@
 //   LINGOCHUNK_TOKEN=lcp_... [LINGOCHUNK_BASE_URL=http://localhost:8000] \
 //     node --experimental-strip-types scripts/smoke.ts
 //
-// It imports the built client from dist/, so build first.
+// It imports the built client from dist/, so build first. One line per step:
+// list_library -> first submission -> transcript slice -> audio-url ->
+// vocab page -> lookup of a returned lemma -> search -> a 2-second clip.
 import { LingoChunkClient } from "../dist/client.js";
 import { loadConfig } from "../dist/config.js";
-
-async function step(label: string, fn: () => Promise<unknown>): Promise<void> {
-  try {
-    const value = await fn();
-    const preview = JSON.stringify(value).slice(0, 200);
-    console.log(`ok   ${label}: ${preview}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.log(`FAIL ${label}: ${message}`);
-  }
-}
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const client = new LingoChunkClient(config);
   console.log(`base: ${config.baseUrl}`);
 
-  await step("get_vocabulary", () => client.getVocabulary({ limit: 3 }));
-  await step("list_library", () => client.listLibrary({ limit: 3 }));
-  await step("search_examples", () => client.searchExamples({ q: "a", limit: 3 }));
-
-  // Endpoints that need a submission id: use the first library item if any.
-  const library = (await client.listLibrary({ limit: 1 })) as {
-    items?: { id?: string }[];
+  const library = (await client.listLibrary({ limit: 5 })) as {
+    items?: { id?: string; learning_language?: string }[];
   };
-  const submissionId = library.items?.[0]?.id;
-  if (!submissionId) {
-    console.log("skip transcript/audio/clip: no submissions in the library");
+  console.log(`list_library: ${library.items?.length ?? 0} items`);
+  const submission = library.items?.[0];
+  if (!submission?.id) {
+    console.log("stop: no submissions in the library");
     return;
   }
-  console.log(`using submission ${submissionId}`);
-  await step("get_transcript", () =>
-    client.getTranscript(submissionId, { to_sentence: 3 }),
+  const submissionId = submission.id;
+  const language = submission.learning_language ?? "de";
+  console.log(`using submission ${submissionId} (${language})`);
+
+  const transcript = (await client.getTranscript(submissionId, {
+    to_sentence: 3,
+  })) as { transcript_state?: string; sentences?: unknown[] };
+  console.log(
+    `get_transcript: state=${transcript.transcript_state} sentences=${transcript.sentences?.length ?? 0}`,
   );
-  await step("get_audio_url", () => client.getAudioUrl(submissionId));
-  await step("get_audio_clip", () => client.getAudioClip(submissionId, 0, 2));
+
+  const audio = (await client.getAudioUrl(submissionId)) as { url?: string };
+  console.log(`get_audio_url: ${audio.url ? "ok" : "no url"}`);
+
+  const vocab = (await client.getVocabulary({ language, limit: 5 })) as {
+    items?: { lemma?: string; language?: string }[];
+  };
+  console.log(`get_vocabulary: ${vocab.items?.length ?? 0} items`);
+
+  const word = vocab.items?.[0];
+  if (word?.lemma) {
+    const lookup = await client.lookupWord({
+      lemma: word.lemma,
+      language: word.language ?? language,
+    });
+    console.log(`lookup_word(${word.lemma}): ${JSON.stringify(lookup).slice(0, 120)}`);
+    const search = (await client.searchExamples({
+      lemma: word.lemma,
+      limit: 3,
+    })) as { hits?: unknown[] };
+    console.log(`search_examples(${word.lemma}): ${search.hits?.length ?? 0} hits`);
+  } else {
+    console.log("lookup_word/search_examples: no vocab lemma to use");
+  }
+
+  const clip = await client.getAudioClip(submissionId, 0, 2);
+  console.log(`get_audio_clip: ${clip.data.byteLength} bytes ${clip.contentType}`);
 }
 
 main().catch((err: unknown) => {
