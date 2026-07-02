@@ -47,8 +47,9 @@ Add these paragraphs to the relevant fluent skill files (or to the user's
 > Do not mirror LingoChunk's scheduling into fluent's own SM-2 queue.
 > **LingoChunk is the system of record for word knowledge.** Skip words it marks
 > mature, and skip fluent's own Anki export for lemmas LingoChunk already covers
-> with native-audio cards. (Writing session-discovered words back into LingoChunk
-> is planned for a future release - `add_card` - and is not available yet.)
+> with native-audio cards. Pushing session-discovered words back into LingoChunk
+> via an `add_card` tool is coming in v1.1; until then, note the new words for the
+> user rather than writing them anywhere.
 
 ## Why this works
 
