@@ -50,9 +50,10 @@ user to add the LingoChunk MCP server (see the plugin README) and stop.
    with no external dependencies. A dozen 5-10s clips at ~128 kbps stays well
    under 2 MB.
 
-5. **Generate the lesson.** Copy `lesson-template.html` (next to this skill) and
-   fill in its marked sections. Keep the template's CSS and JS - they make the
-   exercises work with no backend. Produce exercises from the real material:
+5. **Generate the lesson.** Copy `assets/lesson-template.html` (in this skill
+   directory) and fill in its marked sections. Keep the template's CSS and JS -
+   they make the exercises work with no backend. Produce exercises from the real
+   material:
    - **Gap-fill** from real sentences (blank a `learning`/`new` target word).
    - **Multiple choice** with distractors drawn from the user's own vocabulary
      of the same part of speech, so the wrong answers are plausible.
@@ -84,7 +85,7 @@ user to add the LingoChunk MCP server (see the plugin README) and stop.
 
 ## Template
 
-`lesson-template.html` (in this skill directory) is the starting point. It has
-clearly marked sections to replace and a lightweight, dependency-free exercise
-runtime (gap-fill checking, multiple choice, blur-reveal toggles, audio players).
-Do not rewrite the runtime; fill the content.
+`assets/lesson-template.html` (in this skill directory) is the starting point.
+It has clearly marked sections to replace and a lightweight, dependency-free
+exercise runtime (gap-fill checking, multiple choice, blur-reveal toggles, audio
+players). Do not rewrite the runtime; fill the content.
