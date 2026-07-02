@@ -166,6 +166,23 @@ describe("happy paths", () => {
     const written = await fs.readFile(payload.path);
     expect(written.equals(bytes)).toBe(true);
   });
+
+  it("get_audio_clip picks the file extension from the content type", async () => {
+    mockFetch(
+      new Response(Buffer.from([9, 9]), {
+        status: 200,
+        headers: { "content-type": "audio/mpeg" },
+      }),
+    );
+    const result = await call("get_audio_clip", {
+      submission_id: "xyz",
+      start: 0,
+      end: 2,
+    });
+    const payload = JSON.parse(textOf(result));
+    expect(payload.media_type).toBe("audio/mpeg");
+    expect(payload.path).toBe(path.join(clipDir, "clip-xyz-0-2.mp3"));
+  });
 });
 
 describe("error mapping", () => {
@@ -203,6 +220,13 @@ describe("error mapping", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("retry after 30s");
+  });
+
+  it("400 passes the detail through", async () => {
+    mockFetch(jsonResponse({ detail: "Provide at least one of 'lemma' or 'q'" }, 400));
+    const result = await call("search_examples", {});
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("Provide at least one of 'lemma' or 'q'");
   });
 
   it("404 passes the detail through", async () => {
