@@ -546,4 +546,93 @@ describe("write tools", () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("10 MB cap");
   });
+
+  it("add_card custom passes sentence_position through in the body", async () => {
+    mockFetch(
+      jsonResponse(
+        { deck_id: 2, card_id: 5, card_type: "expression", state: "new" },
+        201,
+      ),
+    );
+    await call("add_card", {
+      kind: "custom",
+      front: "Guten Tag",
+      back: "Good day",
+      submission_id: "s1",
+      sentence_position: 3,
+    });
+    expect(lastUrl).toBe("https://api.test/api/v1/cards");
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      kind: "custom",
+      front: "Guten Tag",
+      back: "Good day",
+      submission_id: "s1",
+      sentence_position: 3,
+    });
+  });
+
+  it("add_card rejects an over-long custom front client-side (cap 200)", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
+    await expect(
+      call("add_card", {
+        kind: "custom",
+        front: "x".repeat(201),
+        back: "ok",
+        submission_id: "s1",
+      }),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("add_card surfaces code=ambiguous_lemma with a disambiguation hint", async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          detail:
+            "This word has several parts of speech here (NOUN, VERB); pass 'pos' to choose one.",
+          code: "ambiguous_lemma",
+        },
+        409,
+      ),
+    );
+    const result = await call("add_card", { kind: "vocab", lemma: "das" });
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("NOUN, VERB");
+    expect(text).toContain("pos");
+    expect(text).toContain("submission_id");
+  });
+
+  it("add_card surfaces code=duplicate_card as safe-to-ignore", async () => {
+    mockFetch(
+      jsonResponse(
+        { detail: "This word is already in that deck", code: "duplicate_card" },
+        409,
+      ),
+    );
+    const result = await call("add_card", { kind: "vocab", lemma: "Haus" });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("safe to ignore");
+  });
+
+  it("save_lesson surfaces code=lesson_cap with a delete hint", async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          detail:
+            "You already have the maximum of 100 lessons. Delete one before saving another.",
+          code: "lesson_cap",
+        },
+        409,
+      ),
+    );
+    const result = await call("save_lesson", {
+      title: "T",
+      language: "de",
+      html: "<h1></h1>",
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("delete an old lesson");
+  });
 });

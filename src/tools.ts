@@ -34,7 +34,18 @@ function errorResult(err: unknown): CallToolResult {
   let text: string;
   if (err instanceof ApiError) {
     text = `LingoChunk API error ${err.status}: ${err.detail}`;
-    if (err.status === 401) {
+    // A machine-readable code (when present) is more specific than the status.
+    if (err.code === "ambiguous_lemma") {
+      text +=
+        "\nRetry with the 'pos' (or 'submission_id') value named above to pick " +
+        "one.";
+    } else if (err.code === "duplicate_card") {
+      text += "\nThe card already exists; this is safe to ignore, not to retry.";
+    } else if (err.code === "lesson_cap") {
+      text +=
+        "\nYou are at the lesson limit; delete an old lesson in your LingoChunk " +
+        "library (Settings) to make room.";
+    } else if (err.status === 401) {
       text += "\nCheck LINGOCHUNK_TOKEN is a valid, un-revoked token (prefix lcp_).";
     } else if (err.status === 403) {
       text +=
@@ -385,21 +396,29 @@ export function registerTools(
         "Add a card to the user's LingoChunk review queue (FSRS; it starts as " +
         "'new'). kind=vocab adds a word the user ALREADY has in their vocabulary, " +
         "resolved by lemma against their own content (404 if the lemma is not in " +
-        "their vocabulary); if that lemma occurs in several episodes, pass " +
-        "submission_id to disambiguate. kind=custom adds a freeform card and " +
-        "REQUIRES front, back and submission_id (the episode it anchors to). Omit " +
-        "deck_id to use the per-language 'External' deck (created on first use); " +
-        "External decks feed in-app review but CANNOT be exported to Anki yet, so " +
-        "pass an exportable deck_id from list_decks if you need an .apkg. A 409 " +
-        "means the card already exists: that is expected, not worth retrying (a " +
-        "409 mentioning several submissions instead means pass submission_id). " +
-        "Requires the cards:write scope.",
+        "their vocabulary; 409 code=ambiguous_lemma if it occurs in several " +
+        "episodes or under several parts of speech, so pass submission_id or pos " +
+        "as the message names). kind=custom adds a freeform card and REQUIRES " +
+        "front, back and submission_id (the episode it anchors to); pass " +
+        "sentence_position to anchor its example to a specific transcript " +
+        "sentence. Omit deck_id and the card goes to the deck for its own " +
+        "submission (the same deck the app builds, reviews and exports that " +
+        "episode from, so it is immediately visible and exportable); an explicit " +
+        "deck_id must belong to that submission (400 otherwise). A 409 " +
+        "code=duplicate_card means the card already exists: expected, not worth " +
+        "retrying. NOTE: deleting the anchoring episode deletes the card " +
+        "(cascade), and a card added while the app's Words tab is open on that " +
+        "episode may be overwritten by the app's own save, so add cards when the " +
+        "app is not actively editing that deck. Requires the cards:write scope.",
       inputSchema: {
         deck_id: z
           .number()
           .int()
           .optional()
-          .describe("Target deck id from list_decks; omit for the External deck."),
+          .describe(
+            "Target deck id from list_decks; omit to use the deck for the card's " +
+              "own submission. When given, it must belong to that submission.",
+          ),
         kind: z
           .enum(["vocab", "custom"])
           .describe("vocab = a word from your vocabulary; custom = freeform front/back."),
@@ -412,7 +431,7 @@ export function registerTools(
           .string()
           .max(20)
           .optional()
-          .describe("Part of speech, to disambiguate the lemma (kind=vocab)."),
+          .describe("Part of speech, to disambiguate the lemma (kind=vocab); case-insensitive."),
         submission_id: z
           .string()
           .optional()
@@ -422,19 +441,28 @@ export function registerTools(
           ),
         front: z
           .string()
-          .max(500)
+          .max(200)
           .optional()
-          .describe("Front/prompt text (kind=custom)."),
+          .describe("Front/prompt text (kind=custom; max 200 chars)."),
         back: z
           .string()
-          .max(1000)
+          .max(500)
           .optional()
-          .describe("Back/answer text (kind=custom)."),
+          .describe("Back/answer text (kind=custom; max 500 chars)."),
         note: z
           .string()
-          .max(1000)
+          .max(300)
           .optional()
-          .describe("Optional note shown on the card (kind=custom)."),
+          .describe("Optional note shown on the card (kind=custom; max 300 chars)."),
+        sentence_position: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "1-based transcript position (see get_transcript) to anchor a custom " +
+              "card's example; defaults to the submission's first sentence.",
+          ),
       },
     },
     async (args) => {

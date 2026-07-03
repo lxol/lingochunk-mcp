@@ -1,12 +1,14 @@
 import type { Config } from "./config.js";
 
-/** An error returned by the LingoChunk API (non-2xx), carrying the HTTP status
- *  and the API's `detail` message so tools can surface something actionable. */
+/** An error returned by the LingoChunk API (non-2xx), carrying the HTTP status,
+ *  the API's `detail` message, and its stable machine-readable `code` (e.g.
+ *  ``ambiguous_lemma``) when present, so tools can branch on the outcome. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
     readonly retryAfter?: number,
+    readonly code?: string,
   ) {
     super(`LingoChunk API ${status}: ${detail}`);
     this.name = "ApiError";
@@ -121,15 +123,17 @@ export class LingoChunkClient {
 
   private async raiseForStatus(res: Response): Promise<never> {
     let detail = res.statusText || `HTTP ${res.status}`;
+    let code: string | undefined;
     // Only read a JSON error body, and only a bounded slice of it: a 5xx from a
     // proxy can be a whole HTML page, which we neither want to buffer nor dump
     // into the tool message. Non-JSON errors fall back to the status text.
     if ((res.headers.get("content-type") ?? "").includes("json")) {
       try {
         const raw = (await res.text()).slice(0, MAX_ERROR_BODY);
-        const body = JSON.parse(raw) as { detail?: unknown };
+        const body = JSON.parse(raw) as { detail?: unknown; code?: unknown };
         const formatted = formatDetail(body?.detail);
         if (formatted) detail = formatted;
+        if (typeof body?.code === "string") code = body.code;
       } catch {
         // Malformed or truncated JSON error body; keep the status text.
       }
@@ -140,6 +144,7 @@ export class LingoChunkClient {
       res.status,
       detail,
       Number.isFinite(retryAfter) ? retryAfter : undefined,
+      code,
     );
   }
 
