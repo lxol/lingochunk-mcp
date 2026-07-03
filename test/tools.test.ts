@@ -479,7 +479,7 @@ describe("write tools", () => {
     expect(text).toContain("Mint a new token");
   });
 
-  it("export_anki_deck surfaces a 400 for a non-exportable (External) deck", async () => {
+  it("export_anki_deck surfaces a 400 for a deck with no linked submission", async () => {
     mockFetch(
       jsonResponse(
         { detail: "This deck cannot be exported (it has no linked submission)." },
@@ -506,6 +506,63 @@ describe("write tools", () => {
       expect(payload.status).toBe("ready");
       expect(payload.download_url).toBe("https://r2/deck.apkg");
       expect(lastUrl).toBe("https://api.test/api/v1/decks/7/export/status");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("export_anki_deck absorbs a 429 while triggering, then completes", async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetchSequence([
+        jsonResponse({ detail: "rate limited" }, 429, { "retry-after": "5" }),
+        jsonResponse({ status: "queued", poll: "/api/v1/decks/4/export/status" }),
+        jsonResponse({ status: "pending" }),
+        jsonResponse({ status: "ready", download_url: "https://r2/d.apkg" }),
+      ]);
+      const p = call("export_anki_deck", { deck_id: 4 });
+      // 5s Retry-After backoff on the POST, then a 2s poll gap.
+      await vi.advanceTimersByTimeAsync(7100);
+      const payload = JSON.parse(textOf(await p));
+      expect(payload.status).toBe("ready");
+      expect(payload.download_url).toBe("https://r2/d.apkg");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("export_anki_deck returns re-trigger guidance on status none", async () => {
+    mockFetchSequence([
+      jsonResponse({ status: "queued", poll: "/api/v1/decks/8/export/status" }),
+      jsonResponse({ status: "none" }),
+    ]);
+    const result = await call("export_anki_deck", { deck_id: 8 });
+    const payload = JSON.parse(textOf(result));
+    expect(payload.status).toBe("none");
+    expect(payload.message).toContain("call export_anki_deck again");
+  });
+
+  it("export_anki_deck returns pending guidance when the budget expires", async () => {
+    vi.useFakeTimers();
+    try {
+      // Queued on the POST, then pending forever: a fresh response per call so
+      // no body is read twice.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL, init?: RequestInit) => {
+          lastUrl = String(input);
+          lastInit = init ?? {};
+          const url = String(input);
+          return url.endsWith("/export")
+            ? jsonResponse({ status: "queued", poll: `${url}/status` })
+            : jsonResponse({ status: "pending" });
+        }),
+      );
+      const p = call("export_anki_deck", { deck_id: 9 });
+      await vi.advanceTimersByTimeAsync(61_000);
+      const payload = JSON.parse(textOf(await p));
+      expect(payload.status).toBe("pending");
+      expect(payload.message).toContain("Only re-trigger");
     } finally {
       vi.useRealTimers();
     }

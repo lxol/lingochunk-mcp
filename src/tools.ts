@@ -113,20 +113,56 @@ function params(obj: object): Record<string, QueryValue> {
 
 const EXPORT_POLL_INTERVAL_MS = 2_000;
 const EXPORT_POLL_BUDGET_MS = 60_000;
+// Fallback wait when a 429 carries no Retry-After.
+const EXPORT_RETRY_FALLBACK_MS = 5_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** POST the export, absorbing a 429 by sleeping for Retry-After (capped by the
+ *  remaining budget) and retrying rather than aborting the whole tool. Returns
+ *  false only when the budget runs out mid-backoff. A 400/403/etc bubbles up. */
+async function triggerExport(
+  client: LingoChunkClient,
+  deckId: number,
+  deadline: number,
+): Promise<boolean> {
+  for (;;) {
+    try {
+      await client.exportDeck(deckId);
+      return true;
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 429) throw err;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      const wait =
+        err.retryAfter && err.retryAfter > 0
+          ? err.retryAfter * 1000
+          : EXPORT_RETRY_FALLBACK_MS;
+      await sleep(Math.min(wait, remaining));
+    }
+  }
+}
+
 /** Start a deck export, then poll its status for up to ~60s and return a compact
- *  result the agent can act on. A 400 (e.g. an External/multi-source deck with
- *  no linked submission) or 403 bubbles up as an ApiError for errorResult. */
+ *  result the agent can act on. The endpoint does not re-enqueue while a job is
+ *  in flight, so a 429 while triggering is absorbed with a Retry-After backoff
+ *  (not an abort). A 400 (e.g. a deck with no linked submission) or 403 bubbles
+ *  up as an ApiError for errorResult. */
 async function exportAndPoll(
   client: LingoChunkClient,
   deckId: number,
 ): Promise<CallToolResult> {
-  await client.exportDeck(deckId);
   const deadline = Date.now() + EXPORT_POLL_BUDGET_MS;
+  if (!(await triggerExport(client, deckId, deadline))) {
+    return jsonResult({
+      status: "pending",
+      message:
+        "Rate limited before the export could start; call export_anki_deck " +
+        "again shortly.",
+    });
+  }
   for (;;) {
     const st = await client.exportDeckStatus(deckId);
     if (st.status === "ready") {
@@ -138,12 +174,21 @@ async function exportAndPoll(
         message: "Export failed; call export_anki_deck again to retry.",
       });
     }
+    if (st.status === "none") {
+      return jsonResult({
+        status: "none",
+        message:
+          "No export is available to download; call export_anki_deck again to " +
+          "trigger a fresh one.",
+      });
+    }
     if (Date.now() >= deadline) {
       return jsonResult({
         status: "pending",
         message:
-          "Still generating; call export_anki_deck again shortly to get the " +
-          "download URL.",
+          "Still generating. Call export_anki_deck again shortly to check " +
+          "status; it will not start a second job while one is in flight. Only " +
+          "re-trigger if a later call reports 'failed' or 'none'.",
       });
     }
     await sleep(EXPORT_POLL_INTERVAL_MS);
@@ -491,13 +536,15 @@ export function registerTools(
       title: "Export an Anki deck",
       description:
         "Export one of the user's decks to an Anki .apkg and return a download " +
-        "URL. Running it costs nothing (no LLM). This starts the export and then " +
-        "polls for up to ~60s: it returns {status:'ready', download_url} when the " +
-        "file is ready, {status:'pending'} with a note to call again shortly if " +
-        "it is still generating, or {status:'failed'} to retry. Only a deck with " +
-        "a linked source episode can be exported; the per-language External deck " +
-        "(and other multi-source decks) return a 400. Use list_decks to find an " +
-        "exportable deck_id. Requires the decks:export scope.",
+        "URL. Running it costs nothing (no LLM). This starts the export and polls " +
+        "status for up to ~60s, absorbing rate limits with a Retry-After backoff " +
+        "and never starting a second job while one is already in flight. It " +
+        "returns {status:'ready', download_url} when the file is ready, " +
+        "{status:'pending'} (call again shortly to keep checking) while it " +
+        "generates, {status:'failed'} to retry, or {status:'none'} (nothing to " +
+        "download; call again to trigger a fresh export). A deck with no linked " +
+        "source episode cannot be exported (400). Use list_decks to find a " +
+        "deck_id. Requires the decks:export scope.",
       inputSchema: {
         deck_id: z.number().int().describe("The deck to export (from list_decks)."),
       },
