@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "LingoChunk Public API",
-    "description": "The LingoChunk public API. Read your FSRS-graded vocabulary, look words up, browse your library, pull sliced transcripts and native audio, search your listening history, and cut audio clips.\n\nAuthenticate with a personal access token created in your account settings: send it as `Authorization: Bearer lcp_...`. Each endpoint requires a scope, granted to the token at creation.",
-    "version": "1.0"
+    "description": "The LingoChunk public API. Read your FSRS-graded vocabulary, look words up, browse your library, pull sliced transcripts and native audio, search your listening history, and cut audio clips.\n\nWrite, too: add vocabulary and custom cards to your decks, export a deck to Anki, and save a generated HTML lesson to your library.\n\nAuthenticate with a personal access token created in your account settings: send it as `Authorization: Bearer lcp_...`. Each endpoint requires a scope, granted to the token at creation.",
+    "version": "1.1"
   },
   "servers": [
     {
@@ -1050,7 +1050,7 @@
           "public-v1"
         ],
         "summary": "List Decks",
-        "description": "List the caller's study decks so a client can pick a deck_id to add cards\nto or to export. Reachable with cards:write OR decks:export.\n\n**Requires scope:** `cards:write`, `decks:export`",
+        "description": "List the caller's study decks so a client can pick a deck_id to add cards\nto or to export. Reachable with cards:write OR decks:export.\n\n**Requires one of:** `cards:write`, `decks:export`",
         "operationId": "list_decks_api_v1_decks_get",
         "responses": {
           "200": {
@@ -1102,10 +1102,12 @@
             }
           }
         },
-        "x-required-scopes": [
-          "cards:write",
-          "decks:export"
-        ]
+        "x-required-scopes": {
+          "anyOf": [
+            "cards:write",
+            "decks:export"
+          ]
+        }
       }
     },
     "/api/v1/cards": {
@@ -1149,6 +1151,16 @@
           },
           "404": {
             "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
             "content": {
               "application/json": {
                 "schema": {
@@ -1217,7 +1229,7 @@
           "public-v1"
         ],
         "summary": "Export Deck",
-        "description": "Trigger an Anki (.apkg) export of the deck. Running it costs nothing (no\nLLM). Returns immediately as 'ready' when a fresh .apkg is already cached,\notherwise 'queued'. Poll the status route for the download URL.\n\n**Requires scope:** `decks:export`",
+        "description": "Trigger an Anki (.apkg) export of the deck. Running it costs nothing (no\nLLM). Returns immediately as 'ready' when a fresh .apkg is already cached,\notherwise 'queued'. Re-requesting while a job is already in flight returns\n'queued' without starting a second job. Poll the status route for the URL.\n\n**Requires scope:** `decks:export`",
         "operationId": "export_deck_api_v1_decks__deck_id__export_post",
         "parameters": [
           {
@@ -1253,6 +1265,16 @@
           },
           "404": {
             "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Audio clipping is unavailable on this server",
             "content": {
               "application/json": {
                 "schema": {
@@ -1321,7 +1343,7 @@
           "public-v1"
         ],
         "summary": "Export Deck Status",
-        "description": "Poll a deck export. 'ready' carries a presigned direct download URL for the\n.apkg; 'pending' means generation is in flight; 'failed' means retry; 'none'\nmeans no export has been triggered.\n\n**Requires scope:** `decks:export`",
+        "description": "Poll a deck export. 'ready' carries a presigned direct download URL for the\n.apkg; 'pending' means generation is in flight; 'failed' means retry; 'none'\nmeans nothing to download (never triggered, or a finished job whose .apkg was\nsince invalidated) - re-trigger the export.\n\n**Requires scope:** `decks:export`",
         "operationId": "export_deck_status_api_v1_decks__deck_id__export_status_get",
         "parameters": [
           {
@@ -1448,8 +1470,25 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
           "413": {
-            "description": "Lesson HTML exceeds the 10 MB cap"
+            "description": "Request body exceeds the size cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -1520,9 +1559,11 @@
               "type": "integer",
               "maximum": 200,
               "minimum": 1,
+              "description": "Max items per page",
               "default": 50,
               "title": "Limit"
-            }
+            },
+            "description": "Max items per page"
           },
           {
             "name": "cursor",
@@ -1537,8 +1578,10 @@
                   "type": "null"
                 }
               ],
+              "description": "Opaque cursor from a previous page's next_cursor",
               "title": "Cursor"
-            }
+            },
+            "description": "Opaque cursor from a previous page's next_cursor"
           }
         ],
         "responses": {
@@ -1812,7 +1855,7 @@
               }
             ],
             "title": "Deck Id",
-            "description": "Target deck id; omit for the per-language External deck"
+            "description": "Target deck id (see GET /decks); omit to use the deck for the card's submission. When given, it must belong to that submission."
           },
           "kind": {
             "type": "string",
@@ -1847,7 +1890,7 @@
               }
             ],
             "title": "Pos",
-            "description": "Part of speech, to disambiguate (kind=vocab)"
+            "description": "Part of speech, to disambiguate (kind=vocab); case-insensitive"
           },
           "submission_id": {
             "anyOf": [
@@ -1859,13 +1902,13 @@
               }
             ],
             "title": "Submission Id",
-            "description": "Disambiguate the lemma to one submission (kind=vocab); the source submission the card anchors to (REQUIRED for kind=custom)"
+            "description": "Disambiguate the lemma to one submission (kind=vocab); the source submission the card anchors to (REQUIRED for kind=custom). The card is deleted if that submission is later deleted."
           },
           "front": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 500
+                "maxLength": 200
               },
               {
                 "type": "null"
@@ -1878,7 +1921,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 1000
+                "maxLength": 500
               },
               {
                 "type": "null"
@@ -1891,7 +1934,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 1000
+                "maxLength": 300
               },
               {
                 "type": "null"
@@ -1899,6 +1942,19 @@
             ],
             "title": "Note",
             "description": "Optional note (kind=custom)"
+          },
+          "sentence_position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence Position",
+            "description": "Optional 1-based transcript position (see GET /transcript) to anchor a custom card to a specific sentence, so the exported card shows that sentence and its native audio. Defaults to the submission's first sentence (kind=custom)."
           }
         },
         "type": "object",
@@ -1906,7 +1962,7 @@
           "kind"
         ],
         "title": "AddCardRequest",
-        "description": "Add a card to the learner's SRS (their system of record for word knowledge).\n\n``kind=vocab`` adds a word the learner already has in their vocabulary,\nresolved by ``lemma`` across their accessible content (pass ``submission_id``\nto disambiguate a lemma that appears in several episodes). ``kind=custom``\nadds a freeform front/back card anchored to a submission.\n\n``deck_id`` targets a specific deck (see GET /decks); omit it to use the\nper-language \"External\" deck, which is created on first use."
+        "description": "Add a card to the learner's SRS (their system of record for word knowledge).\n\n``kind=vocab`` adds a word the learner already has in their vocabulary,\nresolved by ``lemma`` across their accessible content (pass ``submission_id``\nto disambiguate a lemma that appears in several episodes, or ``pos`` when it\nappears under several parts of speech). ``kind=custom`` adds a freeform\nfront/back card anchored to a submission.\n\nOmit ``deck_id`` to add to the deck for the card's own submission - the same\ndeck the app builds and reviews from - so the card is immediately visible,\nreviewable and exportable. Pass ``deck_id`` (from GET /decks) to target a\nspecific deck; it must be one of yours and must belong to the same\nsubmission the card anchors to."
       },
       "AudioUrlV1": {
         "properties": {
@@ -1998,7 +2054,7 @@
               "queued"
             ],
             "title": "Status",
-            "description": "ready = a fresh .apkg is already cached (poll for the URL); queued = generation started (no LLM spend)"
+            "description": "ready = a fresh .apkg is already cached (poll for the URL); queued = generation started, poll the status route for the download URL"
           },
           "poll": {
             "type": "string",
@@ -2134,6 +2190,18 @@
             "type": "string",
             "title": "Detail",
             "description": "Human-readable error message"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "Stable machine-readable error code, present when the failure has one a client may branch on (e.g. ambiguous_lemma, duplicate_card, lesson_cap). Absent for errors without a specific code."
           }
         },
         "type": "object",
@@ -2253,16 +2321,18 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 36
                 },
-                "type": "array"
+                "type": "array",
+                "maxItems": 50
               },
               {
                 "type": "null"
               }
             ],
             "title": "Source Submission Ids",
-            "description": "Optional provenance: the submissions the lesson was built from"
+            "description": "Optional provenance: the submissions the lesson was built from (up to 50 ids, each a 36-char submission id)"
           }
         },
         "type": "object",

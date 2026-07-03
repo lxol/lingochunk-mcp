@@ -130,7 +130,7 @@ npm test           # vitest unit tests (mocked fetch; no network)
 
 `spec/openapi-public-v1.json` is the source contract; it is exported from the
 LingoChunk repo (`make generate-openapi-public`) and refreshed here on each API
-release. This copy was taken from LingoChunk commit `0839f180`.
+release. This copy was taken from LingoChunk commit `3c226795`.
 
 ### Live smoke test
 
