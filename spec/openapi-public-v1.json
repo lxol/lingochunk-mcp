@@ -341,7 +341,7 @@
           "public-v1"
         ],
         "summary": "List Library",
-        "description": "List READY submissions in the learner's library (own + followed\ncollections), newest first.\n\nKeyset-paginated on (created_at, id) via ``cursor`` (same convention as\n``/vocab``). The keyset is applied in Python over the ordered rows, matching\nthe vocab endpoint and sidestepping SQLite datetime-comparison quirks; the\nper-user library is bounded, so this stays cheap.\n\n**Requires scope:** `content:read`",
+        "description": "List READY submissions in the learner's library (own + followed\ncollections), newest first.\n\nKeyset-paginated on (created_at, id): pass the previous page's\n``next_cursor`` to fetch the next page (same convention as ``/vocab``).\n\n**Requires scope:** `content:read`",
         "operationId": "list_library_api_v1_library_get",
         "parameters": [
           {
@@ -732,7 +732,7 @@
           "public-v1"
         ],
         "summary": "Search Sentences",
-        "description": "Search the caller's readable library for sentences.\n\n``lemma`` returns the curated example sentences linked to that word - a\nsubset of every occurrence, but the good, hand-picked ones. The lemma is\nmatched case-insensitively against ``lower(lemma)`` (backed by\n``ix_vocabulary_items_lemma_lower``) and joined to its sentences through the\nindexed vocabulary_examples foreign keys. ``q`` does a case-insensitive\nsubstring match on sentence text (a scan, so it is limit-capped). At least\none of the two is required.\n\nResults are a capped SAMPLE, not an exhaustive set: there is no pagination\nand no completeness guarantee. Raise ``limit`` (up to 100) for more, or use\na more specific query.\n\n**Requires scope:** `content:read`",
+        "description": "Search the caller's readable library for sentences.\n\n``lemma`` returns the curated example sentences linked to that word - a\nsubset of every occurrence, but the good, hand-picked ones - matched\ncase-insensitively. ``q`` does a case-insensitive substring match on\nsentence text. At least one of the two is required.\n\nResults are a capped SAMPLE, not an exhaustive set: there is no pagination\nand no completeness guarantee. Raise ``limit`` (up to 100) for more, or use\na more specific query.\n\n**Requires scope:** `content:read`",
         "operationId": "search_sentences_api_v1_sentences_search_get",
         "parameters": [
           {
@@ -887,7 +887,7 @@
           "public-v1"
         ],
         "summary": "Get Audio Clip",
-        "description": "Return a native-audio snippet of [start, end] as an audio file.\n\nThe cut is cached in object storage under\n``clips/{submission_id}/{start_ms}-{end_ms}.{ext}`` and served from cache on\nrepeat. Rate limited per token (30/hour) AND per user (60/hour). Returns 503\nwhen the server has no ffmpeg binary and the clip is not already cached. The\nresponse media type follows the source audio (audio/mp4, audio/mpeg,\naudio/webm, audio/wav or audio/ogg).\n\n**Requires scope:** `content:read`",
+        "description": "Return a native-audio snippet of [start, end] as an audio file.\n\nRepeat requests for the same span are served from cache. Rate limited per\ntoken (30/hour) AND per user (60/hour). May return 503 when clip generation\nis temporarily unavailable and the clip is not already cached. The response\nmedia type follows the source audio (audio/mp4, audio/mpeg, audio/webm,\naudio/wav or audio/ogg).\n\n**Requires scope:** `content:read`",
         "operationId": "get_audio_clip_api_v1_submissions__submission_id__clip_get",
         "parameters": [
           {
@@ -1043,10 +1043,871 @@
           "content:read"
         ]
       }
+    },
+    "/api/v1/decks": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "List Decks",
+        "description": "List the caller's study decks so a client can pick a deck_id to add cards\nto or to export. Reachable with cards:write OR decks:export.\n\n**Requires scope:** `cards:write`, `decks:export`",
+        "operationId": "list_decks_api_v1_decks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckListV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "cards:write",
+          "decks:export"
+        ]
+      }
+    },
+    "/api/v1/cards": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Add Card",
+        "description": "Add a card to the learner's study deck. The new card enters review as\n'new'; existing cards are left untouched. 409 when an identical card already\nexists.\n\n**Requires scope:** `cards:write`",
+        "operationId": "add_card_api_v1_cards_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "cards:write"
+        ]
+      }
+    },
+    "/api/v1/decks/{deck_id}/export": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Export Deck",
+        "description": "Trigger an Anki (.apkg) export of the deck. Running it costs nothing (no\nLLM). Returns immediately as 'ready' when a fresh .apkg is already cached,\notherwise 'queued'. Poll the status route for the download URL.\n\n**Requires scope:** `decks:export`",
+        "operationId": "export_deck_api_v1_decks__deck_id__export_post",
+        "parameters": [
+          {
+            "name": "deck_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Deck Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckExportStartV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "decks:export"
+        ]
+      }
+    },
+    "/api/v1/decks/{deck_id}/export/status": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Export Deck Status",
+        "description": "Poll a deck export. 'ready' carries a presigned direct download URL for the\n.apkg; 'pending' means generation is in flight; 'failed' means retry; 'none'\nmeans no export has been triggered.\n\n**Requires scope:** `decks:export`",
+        "operationId": "export_deck_status_api_v1_decks__deck_id__export_status_get",
+        "parameters": [
+          {
+            "name": "deck_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Deck Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckExportStatusV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "decks:export"
+        ]
+      }
+    },
+    "/api/v1/lessons": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Create Lesson",
+        "description": "Save a single self-contained HTML lesson to the learner's library. The\nHTML is stored in object storage and only ever served via a presigned URL,\nnever from the app origin.\n\n**Requires scope:** `lessons:write`",
+        "operationId": "create_lesson_api_v1_lessons_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonCreatedV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Lesson HTML exceeds the 10 MB cap"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "lessons:write"
+        ]
+      },
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "List Lessons",
+        "description": "List the caller's saved lessons, newest first (cursor-paginated).\n\n**Requires scope:** `lessons:write`",
+        "operationId": "list_lessons_api_v1_lessons_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonListV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "lessons:write"
+        ]
+      }
+    },
+    "/api/v1/lessons/{lesson_id}/view-url": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Lesson View Url Route",
+        "description": "Mint a short-lived URL to open the lesson (owner only). The HTML is served\ninline as text/html from the storage origin, isolated from the app.\n\n**Requires scope:** `lessons:write`",
+        "operationId": "lesson_view_url_route_api_v1_lessons__lesson_id__view_url_get",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonViewUrlV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "lessons:write"
+        ]
+      }
+    },
+    "/api/v1/lessons/{lesson_id}": {
+      "delete": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Delete Lesson Route",
+        "description": "Delete one lesson: its stored HTML object and its row (owner only).\n\n**Requires scope:** `lessons:write`",
+        "operationId": "delete_lesson_route_api_v1_lessons__lesson_id__delete",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "lessons:write"
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "AddCardRequest": {
+        "properties": {
+          "deck_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Id",
+            "description": "Target deck id; omit for the per-language External deck"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "vocab",
+              "custom"
+            ],
+            "title": "Kind",
+            "description": "vocab = from your vocabulary; custom = freeform front/back"
+          },
+          "lemma": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lemma",
+            "description": "Dictionary form (kind=vocab)"
+          },
+          "pos": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pos",
+            "description": "Part of speech, to disambiguate (kind=vocab)"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id",
+            "description": "Disambiguate the lemma to one submission (kind=vocab); the source submission the card anchors to (REQUIRED for kind=custom)"
+          },
+          "front": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Front",
+            "description": "Front/prompt text (kind=custom)"
+          },
+          "back": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Back",
+            "description": "Back/answer text (kind=custom)"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note",
+            "description": "Optional note (kind=custom)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "AddCardRequest",
+        "description": "Add a card to the learner's SRS (their system of record for word knowledge).\n\n``kind=vocab`` adds a word the learner already has in their vocabulary,\nresolved by ``lemma`` across their accessible content (pass ``submission_id``\nto disambiguate a lemma that appears in several episodes). ``kind=custom``\nadds a freeform front/back card anchored to a submission.\n\n``deck_id`` targets a specific deck (see GET /decks); omit it to use the\nper-language \"External\" deck, which is created on first use."
+      },
       "AudioUrlV1": {
         "properties": {
           "url": {
@@ -1074,6 +1935,39 @@
         "title": "AudioUrlV1",
         "description": "A short-lived direct URL to the native audio (supports HTTP Range)."
       },
+      "CardResultV1": {
+        "properties": {
+          "deck_id": {
+            "type": "integer",
+            "title": "Deck Id",
+            "description": "Deck the card was added to"
+          },
+          "card_id": {
+            "type": "integer",
+            "title": "Card Id",
+            "description": "New deck-card id"
+          },
+          "card_type": {
+            "type": "string",
+            "title": "Card Type",
+            "description": "Stored card type (vocab or expression)"
+          },
+          "state": {
+            "type": "string",
+            "title": "State",
+            "description": "FSRS state (always 'new' for a fresh card)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deck_id",
+          "card_id",
+          "card_type",
+          "state"
+        ],
+        "title": "CardResultV1",
+        "description": "The card created by POST /cards."
+      },
       "CollectionRefV1": {
         "properties": {
           "slug": {
@@ -1094,6 +1988,145 @@
         ],
         "title": "CollectionRefV1",
         "description": "The collection a piece of content belongs to."
+      },
+      "DeckExportStartV1": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "queued"
+            ],
+            "title": "Status",
+            "description": "ready = a fresh .apkg is already cached (poll for the URL); queued = generation started (no LLM spend)"
+          },
+          "poll": {
+            "type": "string",
+            "title": "Poll",
+            "description": "Poll this path for the download URL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "poll"
+        ],
+        "title": "DeckExportStartV1",
+        "description": "Result of triggering a deck export."
+      },
+      "DeckExportStatusV1": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending",
+              "failed",
+              "none"
+            ],
+            "title": "Status",
+            "description": "ready = download_url available; pending = generating; failed = generation failed, retry; none = never triggered"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url",
+            "description": "Presigned direct download for the .apkg, when status=ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DeckExportStatusV1",
+        "description": "Current state of a deck's Anki export."
+      },
+      "DeckListV1": {
+        "properties": {
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/DeckSummaryV1"
+            },
+            "type": "array",
+            "title": "Decks",
+            "description": "Decks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decks"
+        ],
+        "title": "DeckListV1",
+        "description": "The learner's decks, newest activity first."
+      },
+      "DeckSummaryV1": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Deck id (use as deck_id when adding/exporting)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Deck name"
+          },
+          "learning_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Language",
+            "description": "Language of the deck's cards (ISO 639-1)"
+          },
+          "source_submission_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Submission Title",
+            "description": "Title of the submission this deck was auto-created from, if any"
+          },
+          "total_cards": {
+            "type": "integer",
+            "title": "Total Cards",
+            "description": "Total cards in the deck"
+          },
+          "new_cards": {
+            "type": "integer",
+            "title": "New Cards",
+            "description": "Cards still in the FSRS 'new' state"
+          },
+          "due_cards": {
+            "type": "integer",
+            "title": "Due Cards",
+            "description": "Cards due for review now"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "total_cards",
+          "new_cards",
+          "due_cards"
+        ],
+        "title": "DeckSummaryV1",
+        "description": "One of the learner's study decks, for discovering deck ids to add to or\nexport."
       },
       "ErrorV1": {
         "properties": {
@@ -1193,6 +2226,212 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LessonCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "description": "Lesson title"
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Language",
+            "description": "ISO 639-1 code"
+          },
+          "html": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Html",
+            "description": "The complete self-contained HTML"
+          },
+          "source_submission_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Submission Ids",
+            "description": "Optional provenance: the submissions the lesson was built from"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "language",
+          "html"
+        ],
+        "title": "LessonCreateRequest",
+        "description": "Save a single self-contained HTML lesson (up to 10 MB)."
+      },
+      "LessonCreatedV1": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Lesson id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Lesson title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Language (ISO 639-1)"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "Size of the stored HTML in bytes"
+          },
+          "source_submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Submission Ids",
+            "description": "Provenance submission ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the lesson was saved"
+          },
+          "view_url": {
+            "type": "string",
+            "title": "View Url",
+            "description": "Short-lived presigned URL to open the lesson"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "language",
+          "size_bytes",
+          "created_at",
+          "view_url"
+        ],
+        "title": "LessonCreatedV1",
+        "description": "The create response - includes a ready-to-open view URL."
+      },
+      "LessonListV1": {
+        "properties": {
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/LessonV1"
+            },
+            "type": "array",
+            "title": "Lessons",
+            "description": "Lessons"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "Pass as 'cursor' for the next page; null when no more"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lessons"
+        ],
+        "title": "LessonListV1",
+        "description": "A page of the learner's lessons, newest first."
+      },
+      "LessonV1": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Lesson id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Lesson title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Language (ISO 639-1)"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "Size of the stored HTML in bytes"
+          },
+          "source_submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Submission Ids",
+            "description": "Provenance submission ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the lesson was saved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "language",
+          "size_bytes",
+          "created_at"
+        ],
+        "title": "LessonV1",
+        "description": "A hosted lesson's metadata. The HTML is only ever fetched via a presigned\nview URL (see /lessons/{id}/view-url), never inline from the app."
+      },
+      "LessonViewUrlV1": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Presigned URL (serves text/html inline)"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In",
+            "description": "Seconds until the URL expires"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "LessonViewUrlV1",
+        "description": "A short-lived URL that opens the lesson HTML from the storage origin."
       },
       "LibraryItemV1": {
         "properties": {
