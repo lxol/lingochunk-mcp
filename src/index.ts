@@ -5,7 +5,7 @@ import { loadConfig } from "./config.js";
 import { LingoChunkClient } from "./client.js";
 import { registerTools } from "./tools.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 
 async function main(): Promise<void> {
   // Fail fast (to stderr, never stdout - stdout is the MCP wire) if the token

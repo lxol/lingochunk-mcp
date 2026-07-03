@@ -1,6 +1,6 @@
 {
   "name": "lingochunk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Turn a coding agent into a language tutor grounded in your LingoChunk listening history: your FSRS-graded vocabulary, native-audio transcripts and clips, and library, plus a skill that builds self-contained HTML lessons.",
   "author": { "name": "LingoChunk", "url": "https://lingochunk.com" },
   "homepage": "https://lingochunk.com",

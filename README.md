@@ -27,8 +27,8 @@ the last four (phase 3) write to your account.
 | `search_examples` | `content:read` | Example sentences across your library, by word (`lemma`) or text (`q`). A capped sample, not exhaustive. |
 | `get_audio_clip` | `content:read` | Cuts a short native-audio snippet, **saves it to a local file**, and returns `{path, media_type, size_bytes}` for embedding in lessons. |
 | `list_decks` | `cards:write` or `decks:export` | Your study decks with card counts, for picking a `deck_id` to add to or export. |
-| `add_card` | `cards:write` | Adds a card to your review queue (FSRS, starts new): `kind=vocab` from your vocabulary, or `kind=custom` front/back. Omit `deck_id` for the per-language External deck. |
-| `export_anki_deck` | `decks:export` | Exports a deck to Anki `.apkg` (no LLM), polling internally; returns a download URL when ready. External decks can't be exported. |
+| `add_card` | `cards:write` | Adds a card to your review queue (FSRS, starts new): `kind=vocab` from your vocabulary, or `kind=custom` front/back. Omit `deck_id` to use the deck for the card's own submission. |
+| `export_anki_deck` | `decks:export` | Exports a deck to Anki `.apkg` (no LLM), polling internally; returns a download URL when ready. A deck with no linked episode can't be exported. |
 | `save_lesson` | `lessons:write` | Saves a self-contained HTML lesson to your private library (10 MB cap, 100 max); returns metadata + a short-lived view URL. |
 
 Plus two skills:
