@@ -10,7 +10,8 @@ for your vocabulary, transcripts and audio, plus write tools to add review cards
 export Anki decks and save lessons. The app stays closed source; this repo is
 just the client, the committed API spec, and two lesson skills.
 
-> Status: local/preview. Not yet published to npm and not yet a public repo.
+> Install: `/plugin marketplace add lxol/lingochunk-mcp` in Claude Code (server
+> plus lesson skills), or `npx -y @lingochunk/mcp` as a standalone MCP server.
 
 ## What it gives an agent
 
@@ -50,38 +51,36 @@ Plus two skills:
 
 ## Use it
 
-### Option A - Claude Code plugin (bundles the server + the skills)
+### Option A - Claude Code plugin (the server plus the lesson skills)
 
-Build once, then point Claude Code at this directory as a plugin. The bundled
-`.mcp.json` runs the server from `dist/` via `${CLAUDE_PLUGIN_ROOT}`, and the
-`skills/` are auto-discovered.
+This repo is its own plugin marketplace. In Claude Code:
+
+```
+/plugin marketplace add lxol/lingochunk-mcp
+/plugin install lingochunk@lingochunk-mcp
+```
+
+The plugin's `.mcp.json` runs the published server via `npx -y @lingochunk/mcp`
+(no build step needed) and reads your token from the environment, so export it
+in the shell you start Claude Code from:
 
 ```bash
-npm install     # installs deps and builds dist/ (via the prepare script)
 export LINGOCHUNK_TOKEN=lcp_your_token_here
 ```
 
-**Run `npm install` before adding the plugin.** `dist/` is gitignored and does
-not exist in a fresh checkout; the `prepare` script builds it during
-`npm install`. Until it does, `.mcp.json` points at a `dist/index.js` that is not
-there and the server will not start.
+The `skills/` (lesson builder and episode discussion) are picked up
+automatically with the plugin.
 
-Then add the plugin from its local path in Claude Code (plugin install from a
-local directory), or copy the MCP block from `.mcp.json` into your Claude Code
-MCP config, replacing `${CLAUDE_PLUGIN_ROOT}` with the absolute path to this repo.
-
-### Option B - standalone MCP server
-
-Once published to npm this will be a one-liner:
+### Option B - standalone MCP server (tools only, no skills)
 
 ```bash
-claude mcp add lingochunk --env LINGOCHUNK_TOKEN=lcp_... -- npx -y @lingochunk/mcp
+claude mcp add --scope user lingochunk --env LINGOCHUNK_TOKEN=lcp_... -- npx -y @lingochunk/mcp
 ```
 
-Until then, build locally and run it directly:
+For development against a local checkout, run the built server directly:
 
 ```bash
-npm install
+npm install     # installs deps and builds dist/ via the prepare script
 claude mcp add lingochunk --env LINGOCHUNK_TOKEN=lcp_... -- node /absolute/path/to/lingochunk-mcp/dist/index.js
 ```
 

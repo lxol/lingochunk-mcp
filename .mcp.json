@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "lingochunk": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@lingochunk/mcp"],
       "env": {
         "LINGOCHUNK_TOKEN": "${LINGOCHUNK_TOKEN}"
       }
