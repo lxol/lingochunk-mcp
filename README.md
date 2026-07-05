@@ -16,8 +16,8 @@ contributions (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## What it gives an agent
 
-Eleven tools, each wrapping one public endpoint. The first seven are read-only;
-the last four (phase 3) write to your account.
+Twelve tools, each wrapping one public endpoint. The first seven are read-only;
+the last five write to your account.
 
 | Tool | Scope | What it does |
 |---|---|---|
@@ -32,6 +32,7 @@ the last four (phase 3) write to your account.
 | `add_card` | `cards:write` | Adds a card to your review queue (FSRS, starts new). Preferred: the `card.v1` kinds (`word`, `phrase`, `collocation`, `idiom`, `chunk`, `grammar`, `cloze`, `contrast`, `qa`, `production`) anchored to a verbatim transcript sentence - the server derives the highlight/blur painting and native-audio clip, so the card matches the app's own. Legacy: `kind=vocab` from your vocabulary, or `kind=custom` front/back. Omit `deck_id` to use the deck for the card's own submission. |
 | `export_anki_deck` | `decks:export` | Exports a deck to Anki `.apkg` (no LLM), polling internally; returns a download URL when ready. A deck with no linked episode can't be exported. |
 | `save_lesson` | `lessons:write` | Saves a lesson to your private library (100 max). Preferred: a structured `lesson.v1` document the app renders natively (Lessons tab on the episode, real audio, live word state, Ask AI); returns metadata + an `app_url`. Legacy: a self-contained HTML file (10 MB cap) opened via a short-lived view URL. |
+| `delete_lesson` | `lessons:write` | Permanently deletes one saved lesson by id (destructive; owner-scoped server-side). Mainly for iterating: re-saving creates a new lesson, so superseded drafts count against the 100-lesson cap. |
 
 Plus three skills:
 

@@ -115,10 +115,11 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tool registration", () => {
-  it("registers all eleven tools", () => {
+  it("registers all twelve tools", () => {
     expect([...tools.keys()].sort()).toEqual(
       [
         "add_card",
+        "delete_lesson",
         "export_anki_deck",
         "get_audio_clip",
         "get_audio_url",
@@ -662,6 +663,24 @@ describe("write tools", () => {
       language: "de",
       html: "<h1></h1>",
     });
+  });
+
+  it("delete_lesson DELETEs by id (URL-encoded) and reports the deletion", async () => {
+    mockFetch(new Response(null, { status: 204 }));
+    const result = await call("delete_lesson", { lesson_id: "l1/../x" });
+    expect(lastUrl).toBe("https://api.test/api/v1/lessons/l1%2F..%2Fx");
+    expect(lastInit.method).toBe("DELETE");
+    expect(JSON.parse(textOf(result))).toEqual({
+      deleted: true,
+      lesson_id: "l1/../x",
+    });
+  });
+
+  it("delete_lesson surfaces a 404 for a foreign or unknown lesson", async () => {
+    mockFetch(jsonResponse({ detail: "Lesson not found" }, 404));
+    const result = await call("delete_lesson", { lesson_id: "nope" });
+    expect(textOf(result)).toContain("404");
+    expect(textOf(result)).toContain("Lesson not found");
   });
 
   it("save_lesson surfaces the 413 size-cap message", async () => {

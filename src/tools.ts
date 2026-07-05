@@ -787,4 +787,33 @@ export function registerTools(
     },
     async (args) => runJson(() => client.createLesson(args)),
   );
+
+  server.registerTool(
+    "delete_lesson",
+    {
+      title: "Delete a lesson",
+      description:
+        "Permanently delete ONE of the user's saved lessons (the stored " +
+        "document and its metadata row). Destructive and not undoable: only " +
+        "delete a lesson the user has explicitly named or has just asked to " +
+        "replace; never sweep lessons unprompted. Typical use: iterating on " +
+        "a lesson - re-saving always creates a NEW lesson, so delete the " +
+        "superseded draft (its id is in save_lesson's response) to stay " +
+        "under the 100-lesson cap. 404 means the id does not exist or is " +
+        "not the user's. Requires the lessons:write scope.",
+      annotations: { destructiveHint: true, idempotentHint: true },
+      inputSchema: {
+        lesson_id: z
+          .string()
+          .min(1)
+          .max(36)
+          .describe("The lesson to delete (id from save_lesson's response)."),
+      },
+    },
+    async ({ lesson_id }) =>
+      runJson(async () => {
+        await client.deleteLesson(lesson_id);
+        return { deleted: true, lesson_id };
+      }),
+  );
 }

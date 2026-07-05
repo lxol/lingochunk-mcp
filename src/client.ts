@@ -164,6 +164,18 @@ export class LingoChunkClient {
     return (await res.json()) as T;
   }
 
+  /** DELETE an endpoint; success is 204 with no body to parse. */
+  private async deleteNoContent(path: string): Promise<void> {
+    const res = await fetch(this.buildUrl(path), {
+      method: "DELETE",
+      headers: this.authHeaders("application/json"),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      await this.raiseForStatus(res);
+    }
+  }
+
   /** POST a JSON body to an endpoint and parse the JSON response. */
   private async postJson<T>(path: string, body?: unknown): Promise<T> {
     const headers = this.authHeaders("application/json");
@@ -226,6 +238,11 @@ export class LingoChunkClient {
 
   createLesson(body: object): Promise<unknown> {
     return this.postJson("/lessons", body);
+  }
+
+  /** Owner-scoped server-side: a foreign or unknown id is a 404, never a leak. */
+  deleteLesson(lessonId: string): Promise<void> {
+    return this.deleteNoContent(`/lessons/${encodeURIComponent(lessonId)}`);
   }
 
   /** Start an Anki export (no body). 400 for a deck with no linked submission. */
