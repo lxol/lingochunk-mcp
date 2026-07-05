@@ -11,7 +11,7 @@ export Anki decks and save lessons. The app stays closed source; this repo is
 the client, the committed API spec, and the skills - and the skills are open to
 contributions (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
-> Install: `/plugin marketplace add lxol/lingochunk-mcp` in Claude Code (server
+> Install: `/plugin marketplace add lingochunk/lingochunk-mcp` in Claude Code (server
 > plus lesson skills), or `npx -y @lingochunk/mcp` as a standalone MCP server.
 
 ## What it gives an agent
@@ -62,7 +62,7 @@ Plus three skills:
 This repo is its own plugin marketplace. In Claude Code:
 
 ```
-/plugin marketplace add lxol/lingochunk-mcp
+/plugin marketplace add lingochunk/lingochunk-mcp
 /plugin install lingochunk@lingochunk-mcp
 ```
 

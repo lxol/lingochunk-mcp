@@ -35,10 +35,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lxol/lingochunk-mcp.git"
+    "url": "git+https://github.com/lingochunk/lingochunk-mcp.git"
   },
-  "homepage": "https://github.com/lxol/lingochunk-mcp#readme",
+  "homepage": "https://github.com/lingochunk/lingochunk-mcp#readme",
   "bugs": {
-    "url": "https://github.com/lxol/lingochunk-mcp/issues"
+    "url": "https://github.com/lingochunk/lingochunk-mcp/issues"
   }
 }

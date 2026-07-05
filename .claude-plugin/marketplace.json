@@ -11,7 +11,7 @@
       "description": "Turn a coding agent into a language tutor grounded in your LingoChunk listening history: FSRS-graded vocabulary, native-audio transcripts and clips, Anki export, and skills that build native in-app lessons and flashcards.",
       "author": { "name": "LingoChunk" },
       "homepage": "https://lingochunk.com",
-      "repository": "https://github.com/lxol/lingochunk-mcp",
+      "repository": "https://github.com/lingochunk/lingochunk-mcp",
       "license": "MIT",
       "keywords": ["language-learning", "vocabulary", "anki", "flashcards", "audio", "lessons"],
       "category": "education"
