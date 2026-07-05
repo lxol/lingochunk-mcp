@@ -1445,7 +1445,7 @@
           "public-v1"
         ],
         "summary": "Create Lesson",
-        "description": "Save a single self-contained HTML lesson to the learner's library. The\nHTML is stored in object storage and only ever served via a presigned URL,\nnever from the app origin.\n\n**Requires scope:** `lessons:write`",
+        "description": "Save a lesson to the learner's library: either a self-contained HTML\nfile (stored in object storage, only ever served via a presigned URL,\nnever from the app origin) or a structured lesson.v1 document (validated\nagainst its source submission and rendered natively in the app).\n\n**Requires scope:** `lessons:write`",
         "operationId": "create_lesson_api_v1_lessons_post",
         "requestBody": {
           "required": true,
@@ -1673,7 +1673,7 @@
           "public-v1"
         ],
         "summary": "Lesson View Url Route",
-        "description": "Mint a short-lived URL to open the lesson (owner only). The HTML is served\ninline as text/html from the storage origin, isolated from the app.\n\n**Requires scope:** `lessons:write`",
+        "description": "Mint a short-lived URL to open the lesson (owner only, HTML format\nonly - native documents open in the app). The HTML is served inline as\ntext/html from the storage origin, isolated from the app.\n\n**Requires scope:** `lessons:write`",
         "operationId": "lesson_view_url_route_api_v1_lessons__lesson_id__view_url_get",
         "parameters": [
           {
@@ -1971,6 +1971,63 @@
         ],
         "title": "AddCardRequest",
         "description": "Add a card to the learner's SRS (their system of record for word knowledge).\n\n``kind=vocab`` adds a word the learner already has in their vocabulary,\nresolved by ``lemma`` across their accessible content (pass ``submission_id``\nto disambiguate a lemma that appears in several episodes, or ``pos`` when it\nappears under several parts of speech). ``kind=custom`` adds a freeform\nfront/back card anchored to a submission.\n\nOmit ``deck_id`` to add to the deck for the card's own submission - the same\ndeck the app builds and reviews from - so the card is immediately visible,\nreviewable and exportable. Pass ``deck_id`` (from GET /decks) to target a\nspecific deck; it must be one of yours and must belong to the same\nsubmission the card anchors to."
+      },
+      "AudioSlice": {
+        "properties": {
+          "start": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Start",
+            "description": "Clip start in seconds"
+          },
+          "end": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "End",
+            "description": "Clip end in seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "AudioSlice",
+        "description": "A [start, end) window into the source submission's ORIGINAL audio.\n\nPlayback is range-seek on the submission's own stream, exactly as Listen\nplays sentences and loop ranges. No derived clip files exist anywhere in\nthe native lesson pipeline (no ffmpeg cutting, no stored bytes).\n\ninf/nan are rejected: they pass ge/gt checks but canonical serialisation\nemits them as null, which bricks every later re-read of the stored\ndocument (a permanent 500 on the document/export routes)."
+      },
+      "AudioSliceBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "audio_slice",
+            "title": "Type"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioSlice"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "audio"
+        ],
+        "title": "AudioSliceBlock",
+        "description": "A standalone player row (e.g. the whole-passage first listen)."
       },
       "AudioUrlV1": {
         "properties": {
@@ -2478,6 +2535,92 @@
         "title": "DeckSummaryV1",
         "description": "One of the learner's study decks, for discovering deck ids to add to or\nexport."
       },
+      "DialogueBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "dialogue",
+            "title": "Type"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/DialogueLine"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Lines"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "lines"
+        ],
+        "title": "DialogueBlock",
+        "description": "The transcript slice as a dialogue."
+      },
+      "DialogueLine": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Position",
+            "description": "1-based transcript position"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "translation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation"
+          },
+          "highlights": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Highlights"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "position",
+          "text"
+        ],
+        "title": "DialogueLine",
+        "description": "One transcript sentence presented as a dialogue line.\n\n``position`` anchors the line to the stored sentence (the save route\nverifies ``text`` matches it, so a lesson cannot misattribute content to\nthe recording). ``highlights`` are [start, end) CODE-POINT ranges into\n``text`` for the amber pattern marks (both renderers treat them as code\npoints; supplementary-plane characters count as one). Ranges must not\noverlap - both renderers would otherwise duplicate the overlapped text."
+      },
       "ErrorV1": {
         "properties": {
           "detail": {
@@ -2504,6 +2647,280 @@
         ],
         "title": "ErrorV1",
         "description": "The uniform error body for every /api/v1 failure."
+      },
+      "ExerciseGapFillBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "exercise_gap_fill",
+            "title": "Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "wordbank": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 60,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 12
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wordbank"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GapFillItem"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "items"
+        ],
+        "title": "ExerciseGapFillBlock",
+        "description": "Gap-fill, optionally cued by a word bank."
+      },
+      "ExerciseMatchBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "exercise_match",
+            "title": "Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/MatchPair"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Pairs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "pairs"
+        ],
+        "title": "ExerciseMatchBlock",
+        "description": "Ordne zu: match words to meanings."
+      },
+      "ExerciseMcqBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "exercise_mcq",
+            "title": "Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioSlice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0,
+                "description": "1-based transcript position"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "options": {
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 2,
+            "title": "Options"
+          },
+          "correct": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Correct",
+            "description": "0-based index into options"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "options",
+          "correct"
+        ],
+        "title": "ExerciseMcqBlock",
+        "description": "Multiple choice (recognition or listening comprehension when ``audio``\nis present)."
+      },
+      "ExerciseProductionBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "exercise_production",
+            "title": "Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "model_answer": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Model Answer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "prompt",
+          "model_answer"
+        ],
+        "title": "ExerciseProductionBlock",
+        "description": "Free production on ruled lines with a blurred model answer."
       },
       "FsrsSummaryV1": {
         "properties": {
@@ -2576,6 +2993,163 @@
         "title": "FsrsSummaryV1",
         "description": "A learner's spaced-repetition state for one word, aggregated across all\nthe cards they hold for it (a word can have several card variants)."
       },
+      "GapFillItem": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0,
+                "description": "1-based transcript position"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "answers": {
+            "items": {
+              "items": {
+                "type": "string",
+                "maxLength": 60,
+                "minLength": 1
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Answers"
+          },
+          "translation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "answers"
+        ],
+        "title": "GapFillItem",
+        "description": "One sentence with {{n}} gap tokens; ``answers[n-1]`` lists the accepted\nalternatives for gap n."
+      },
+      "GrammarBoxBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "grammar_box",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 1500,
+            "minLength": 1,
+            "title": "Explanation"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/GrammarEvidence"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Evidence"
+          },
+          "merke": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 350
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merke"
+          },
+          "achtung": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 350
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Achtung"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "explanation"
+        ],
+        "title": "GrammarBoxBlock",
+        "description": "The one-point-per-lesson rule box, wearing the Ask AI callout grammar:\nevidence rows (the breakdown), a Merke takeaway, an Achtung watch-out."
+      },
+      "GrammarEvidence": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0,
+                "description": "1-based transcript position"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "note"
+        ],
+        "title": "GrammarEvidence",
+        "description": "One evidence row: a piece of the actual passage plus why it matters."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2592,24 +3166,54 @@
       "LessonCreateRequest": {
         "properties": {
           "title": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Title",
-            "description": "Lesson title"
+            "description": "Lesson title (required with 'html'; ignored with 'document')"
           },
           "language": {
-            "type": "string",
-            "maxLength": 10,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Language",
-            "description": "ISO 639-1 code"
+            "description": "ISO 639-1 code (required with 'html'; ignored with 'document')"
           },
           "html": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Html",
-            "description": "The complete self-contained HTML"
+            "description": "The complete self-contained HTML (legacy lesson format)"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LessonDocumentV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A structured lesson.v1 document (native in-app lesson)"
           },
           "source_submission_ids": {
             "anyOf": [
@@ -2630,13 +3234,8 @@
           }
         },
         "type": "object",
-        "required": [
-          "title",
-          "language",
-          "html"
-        ],
         "title": "LessonCreateRequest",
-        "description": "Save a single self-contained HTML lesson (up to 10 MB)."
+        "description": "Save a lesson: EITHER a single self-contained HTML file (up to 10 MB,\nlegacy path) OR a structured lesson.v1 ``document`` (rendered natively by\nthe app with crosslinks into Listen/Words). Exactly one of ``html`` /\n``document`` must be set. For documents, title/language/source come from\nthe document itself and the top-level fields are ignored."
       },
       "LessonCreatedV1": {
         "properties": {
@@ -2655,10 +3254,52 @@
             "title": "Language",
             "description": "Language (ISO 639-1)"
           },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "Stored format: 'html' or 'lesson.v1'",
+            "default": "html"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id",
+            "description": "Source submission (lesson.v1 only)"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level",
+            "description": "CEFR level, when known"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes",
+            "description": "Estimated study time in minutes, when known"
+          },
           "size_bytes": {
             "type": "integer",
             "title": "Size Bytes",
-            "description": "Size of the stored HTML in bytes"
+            "description": "Size of the stored artefact in bytes"
           },
           "source_submission_ids": {
             "items": {
@@ -2675,9 +3316,36 @@
             "description": "When the lesson was saved"
           },
           "view_url": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "View Url",
-            "description": "Short-lived presigned URL to open the lesson"
+            "description": "Short-lived presigned URL to open the lesson (html format only)"
+          },
+          "app_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Url",
+            "description": "App URL of the native lesson (lesson.v1 format only)"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Vocab/review lemmas the source submission does not know; they saved fine but lose their Words-tab crosslink (fix and re-save to restore it)"
           }
         },
         "type": "object",
@@ -2686,11 +3354,165 @@
           "title",
           "language",
           "size_bytes",
-          "created_at",
-          "view_url"
+          "created_at"
         ],
         "title": "LessonCreatedV1",
-        "description": "The create response - includes a ready-to-open view URL."
+        "description": "The create response. HTML lessons get a presigned ``view_url``;\nlesson.v1 documents get an ``app_url`` that opens the native renderer."
+      },
+      "LessonDocumentV1": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "lesson.v1",
+            "title": "Format"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle"
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Language"
+          },
+          "translation_language": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Translation Language"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "A1",
+                  "A2",
+                  "B1",
+                  "B2",
+                  "C1",
+                  "C2"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "source": {
+            "$ref": "#/components/schemas/LessonSource"
+          },
+          "objectives": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Objectives"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 240.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes"
+          },
+          "blocks": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SectionBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ProseBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/AudioSliceBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/DialogueBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/VocabBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/GrammarBoxBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ExerciseMcqBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ExerciseGapFillBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ExerciseMatchBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ExerciseProductionBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ReviewBlock"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "audio_slice": "#/components/schemas/AudioSliceBlock",
+                  "dialogue": "#/components/schemas/DialogueBlock",
+                  "exercise_gap_fill": "#/components/schemas/ExerciseGapFillBlock",
+                  "exercise_match": "#/components/schemas/ExerciseMatchBlock",
+                  "exercise_mcq": "#/components/schemas/ExerciseMcqBlock",
+                  "exercise_production": "#/components/schemas/ExerciseProductionBlock",
+                  "grammar_box": "#/components/schemas/GrammarBoxBlock",
+                  "prose": "#/components/schemas/ProseBlock",
+                  "review": "#/components/schemas/ReviewBlock",
+                  "section": "#/components/schemas/SectionBlock",
+                  "vocab": "#/components/schemas/VocabBlock"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Blocks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "title",
+          "language",
+          "translation_language",
+          "source",
+          "blocks"
+        ],
+        "title": "LessonDocumentV1",
+        "description": "The complete lesson.v1 document."
       },
       "LessonListV1": {
         "properties": {
@@ -2722,6 +3544,61 @@
         "title": "LessonListV1",
         "description": "A page of the learner's lessons, newest first."
       },
+      "LessonSource": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Submission Id"
+          },
+          "from_time": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Time",
+            "description": "Slice start (s)"
+          },
+          "to_time": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Time",
+            "description": "Slice end (s)"
+          },
+          "episode_title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "submission_id"
+        ],
+        "title": "LessonSource",
+        "description": "Where the lesson's material comes from (one submission in v1).\n\nTimes reject inf/nan: canonical serialisation would turn them into null,\nsilently erasing the declared slice on re-read."
+      },
       "LessonV1": {
         "properties": {
           "id": {
@@ -2739,10 +3616,52 @@
             "title": "Language",
             "description": "Language (ISO 639-1)"
           },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "Stored format: 'html' or 'lesson.v1'",
+            "default": "html"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id",
+            "description": "Source submission (lesson.v1 only)"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level",
+            "description": "CEFR level, when known"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes",
+            "description": "Estimated study time in minutes, when known"
+          },
           "size_bytes": {
             "type": "integer",
             "title": "Size Bytes",
-            "description": "Size of the stored HTML in bytes"
+            "description": "Size of the stored artefact in bytes"
           },
           "source_submission_ids": {
             "items": {
@@ -2768,7 +3687,7 @@
           "created_at"
         ],
         "title": "LessonV1",
-        "description": "A hosted lesson's metadata. The HTML is only ever fetched via a presigned\nview URL (see /lessons/{id}/view-url), never inline from the app."
+        "description": "A hosted lesson's metadata. HTML lessons are only ever fetched via a\npresigned view URL (see /lessons/{id}/view-url), never inline from the\napp; lesson.v1 documents open natively in the app (``app_url``)."
       },
       "LessonViewUrlV1": {
         "properties": {
@@ -2925,6 +3844,134 @@
         ],
         "title": "LibraryListV1",
         "description": "A page of library items with an opaque continuation cursor."
+      },
+      "MatchPair": {
+        "properties": {
+          "left": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Left"
+          },
+          "right": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Right"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "left",
+          "right"
+        ],
+        "title": "MatchPair"
+      },
+      "ProseBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "prose",
+            "title": "Type"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "instruction",
+              "body"
+            ],
+            "title": "Style",
+            "default": "body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "ProseBlock",
+        "description": "Instruction lines and short passages. Plain text only."
+      },
+      "ReviewBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "review",
+            "title": "Type"
+          },
+          "can_do": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Can Do"
+          },
+          "new_lemmas": {
+            "items": {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "New Lemmas"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ReviewBlock",
+        "description": "The closing block; the renderer adds the score bar, answer-key toggle\nand the add-to-deck offer for ``new_lemmas`` automatically."
+      },
+      "SectionBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "section",
+            "title": "Type"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle",
+            "description": "Learner-language strap line, e.g. 'Listen first'"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "title"
+        ],
+        "title": "SectionBlock",
+        "description": "A numbered section header; the renderer assigns the numbers."
       },
       "SentenceSearchHitV1": {
         "properties": {
@@ -3164,6 +4211,129 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VocabBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "vocab",
+            "title": "Type"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/VocabEntry"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "entries"
+        ],
+        "title": "VocabBlock",
+        "description": "The Wortschatz box."
+      },
+      "VocabEntry": {
+        "properties": {
+          "lemma": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Lemma"
+          },
+          "pos": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pos"
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display",
+            "description": "Display form, e.g. 'der Feierabend'"
+          },
+          "forms": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forms",
+            "description": "Principal forms, e.g. 'zog um · ist umgezogen'"
+          },
+          "meaning": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Meaning"
+          },
+          "cefr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "A1",
+                  "A2",
+                  "B1",
+                  "B2",
+                  "C1",
+                  "C2"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cefr"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0,
+                "description": "1-based transcript position"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position",
+            "description": "Anchor sentence in the transcript, when known"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lemma",
+          "meaning"
+        ],
+        "title": "VocabEntry",
+        "description": "One glossary word. FSRS state (new/due/known) is NEVER stored here -\nthe renderer resolves it live so flags stay truthful as the lesson ages."
       },
       "VocabularyEntryV1": {
         "properties": {
