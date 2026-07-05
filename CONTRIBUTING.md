@@ -102,4 +102,30 @@ state, the token only ever sent to the configured origin. Keep it that way.
 refreshed here on each API release - do not hand-edit it; if the API is
 missing something, open an issue.
 
-Releases (npm publish, plugin version bumps) are maintainer-only.
+## Releases (maintainer-only)
+
+Two artefacts ship from this repo, versioned separately, and **an unbumped
+version is an invisible release** - the change sits in git while every
+installed copy reports "up to date":
+
+- **The npm package `@lingochunk/mcp`** (the MCP server, `dist/`). Version in
+  `package.json`; the server reports it via `--version` and in the MCP
+  handshake (read from `package.json` at runtime - never hardcode a copy).
+  Bump + `npm publish` whenever `src/` changes behaviour.
+- **The Claude Code plugin `lingochunk`** (skills + `.mcp.json` + manifest).
+  Version in `.claude-plugin/plugin.json`. Bump it on ANY user-visible
+  change: a skill edit, a new skill, a `.mcp.json` change - this is the
+  number update checks compare, so skill-only changes still need it.
+
+`.mcp.json` pins the exact server version (`@lingochunk/mcp@X.Y.Z`) so a
+plugin update also updates the server (npx would otherwise serve its cache
+forever). Release order therefore matters:
+
+1. Bump `package.json`, `plugin.json` and the `.mcp.json` pin together.
+2. `npm publish` (maintainer 2FA) - the pin must be fetchable BEFORE users
+   can see it.
+3. Only then push to GitHub (pushing first would hand plugin users a pin
+   that npx cannot resolve, and their server would fail to start).
+
+Keep the versions in lockstep when both artefacts change. Docs-only changes
+(README, CONTRIBUTING, docs/) need no bump.

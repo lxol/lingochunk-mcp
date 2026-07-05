@@ -67,9 +67,10 @@ This repo is its own plugin marketplace. In Claude Code:
 /plugin install lingochunk@lingochunk-mcp
 ```
 
-The plugin's `.mcp.json` runs the published server via `npx -y @lingochunk/mcp`
-(no build step needed) and reads your token from the environment, so export it
-in the shell you start Claude Code from:
+The plugin's `.mcp.json` runs the published server via npx, pinned to the
+exact version the plugin was released with (no build step needed), and reads
+your token from the environment, so export it in the shell you start Claude
+Code from:
 
 ```bash
 export LINGOCHUNK_TOKEN=lcp_your_token_here
@@ -131,6 +132,63 @@ plugin; with any other agent, point it at the file (or paste it as context)
 and ask for a lesson. Every hard guarantee - the schema, verbatim transcript
 quoting, sentence positions - is enforced server-side on save, so the
 quality contract holds no matter which agent is driving.
+
+## Updating and checking versions
+
+Two artefacts ship from this repo and version separately:
+
+| Artefact | Carries | Check the version with |
+|---|---|---|
+| Claude Code plugin `lingochunk` | the skills + the server launcher | `claude plugin list`, or `/plugin` -> Installed |
+| npm package `@lingochunk/mcp` | the MCP server (the tools) | `npx -y @lingochunk/mcp --version` |
+
+### Update the plugin (Claude Code)
+
+```
+/plugin marketplace update lingochunk-mcp
+/reload-plugins
+```
+
+The first refreshes the marketplace; the second activates updated skills in
+the RUNNING session (new sessions load them automatically). To compare the
+installed version against what the marketplace offers:
+
+```bash
+claude plugin list --json --available
+```
+
+Set-and-forget alternative: `/plugin` -> Marketplaces -> select
+`lingochunk-mcp` -> **Enable auto-update** (third-party marketplaces have it
+disabled by default; official ones are on). With it enabled, Claude Code
+refreshes at startup and prompts `/reload-plugins` when something changed.
+
+An update only appears when the plugin's `version` was bumped - Claude Code
+uses it as the cache key, which is why our release rule (CONTRIBUTING.md)
+bumps it on every user-visible change.
+
+### Update the MCP server
+
+The plugin pins the exact server version in its `.mcp.json`, so **updating
+the plugin updates the server too** - no separate step. A running session
+keeps its old server process; `/reload-plugins` (or a new session)
+reconnects to the new one.
+
+**Standalone installs** (`claude mcp add ... npx -y @lingochunk/mcp`, or the
+other-agents configs above) are exposed to an npx trap: npx caches packages
+in `~/.npm/_npx` and does NOT re-check the registry once cached, so an
+unpinned `@lingochunk/mcp` can run a stale server indefinitely. To check and
+fix:
+
+```bash
+npx -y @lingochunk/mcp --version      # what npx actually runs
+npm view @lingochunk/mcp version      # latest published
+rm -rf ~/.npm/_npx                    # blunt fix: clear the npx cache, relaunch
+```
+
+Or make your config always-fresh by using `@lingochunk/mcp@latest` (checks
+the registry on every launch: ~1-3 s extra startup and a registry
+dependency), or pin `@lingochunk/mcp@<version>` and move the pin yourself
+when you want the update.
 
 ## Configuration
 
