@@ -115,19 +115,25 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tool registration", () => {
-  it("registers all twelve tools", () => {
+  it("registers all eighteen tools", () => {
     expect([...tools.keys()].sort()).toEqual(
       [
         "add_card",
+        "add_language",
+        "commit_language",
         "delete_lesson",
+        "discard_language_draft",
         "export_anki_deck",
         "get_audio_clip",
         "get_audio_url",
         "get_transcript",
+        "get_translation_source",
         "get_vocabulary",
         "list_decks",
+        "list_languages",
         "list_library",
         "lookup_word",
+        "put_language_translations",
         "save_lesson",
         "search_examples",
       ].sort(),
@@ -781,5 +787,272 @@ describe("write tools", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("delete an old lesson");
+  });
+});
+
+describe("language tools", () => {
+  it("list_languages GETs /submissions/{id}/languages and returns the JSON", async () => {
+    const body = {
+      source_language: "de",
+      languages: [
+        { language: "ru", submission_id: "s1", status: "ready", is_primary: true },
+      ],
+      available_targets: ["fr", "uk"],
+      simplify_targets: ["de-a1", "de-a2", "de-b1", "de-b2"],
+      drafts: [{ language: "de-a2", sentences_drafted: 12, sentence_count: 118 }],
+    };
+    mockFetch(jsonResponse(body));
+    const result = await call("list_languages", { submission_id: "s1" });
+    expect(lastUrl).toBe("https://api.test/api/v1/submissions/s1/languages");
+    expect(lastInit.method).toBe("GET");
+    expect(JSON.parse(textOf(result))).toEqual(body);
+  });
+
+  it("add_language POSTs lowercased codes as {languages} and returns jobs + skipped", async () => {
+    mockFetch(
+      jsonResponse({
+        jobs: [{ language: "fr", job_id: "j1" }],
+        skipped: [{ language: "en-a2", reason: "agent_only_target" }],
+      }),
+    );
+    const result = await call("add_language", {
+      submission_id: "s1",
+      languages: ["FR", "en-a2"],
+    });
+    expect(lastUrl).toBe("https://api.test/api/v1/submissions/s1/languages");
+    expect(lastInit.method).toBe("POST");
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      languages: ["fr", "en-a2"],
+    });
+    const payload = JSON.parse(textOf(result));
+    expect(payload.jobs).toEqual([{ language: "fr", job_id: "j1" }]);
+    expect(payload.skipped[0].reason).toBe("agent_only_target");
+  });
+
+  it("add_language rejects an empty language list client-side", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
+    await expect(
+      call("add_language", { submission_id: "s1", languages: [] }),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("add_language rejects more than ten languages client-side", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
+    await expect(
+      call("add_language", {
+        submission_id: "s1",
+        languages: Array.from({ length: 11 }, (_, i) => `l${i}`),
+      }),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("get_translation_source passes from_position (including 0) and limit", async () => {
+    mockFetch(
+      jsonResponse({
+        source_language: "de",
+        pivot_language: "ru",
+        sentence_count: 118,
+        sentences: [],
+        next_from_position: 50,
+      }),
+    );
+    await call("get_translation_source", {
+      submission_id: "abc/123",
+      from_position: 0,
+      limit: 50,
+    });
+    expect(lastUrl).toContain(
+      "/api/v1/submissions/abc%2F123/translation-source?",
+    );
+    expect(lastUrl).toContain("from_position=0");
+    expect(lastUrl).toContain("limit=50");
+  });
+
+  it("put_language_translations PUTs the batch, coercing an absent translation to null", async () => {
+    mockFetch(
+      jsonResponse({
+        accepted: 2,
+        rejected: [],
+        sentences_drafted: 2,
+        sentence_count: 118,
+      }),
+    );
+    await call("put_language_translations", {
+      submission_id: "s1",
+      language: "DE-A2",
+      generator: "claude-fable-5",
+      sentences: [
+        { position: 0, translation: "Die Gruppe traf sich.", meanings: ["die Gruppe", "traf", ""] },
+        { position: 1, meanings: ["ja", ""] },
+      ],
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/submissions/s1/translations/de-a2",
+    );
+    expect(lastInit.method).toBe("PUT");
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      generator: "claude-fable-5",
+      sentences: [
+        {
+          position: 0,
+          translation: "Die Gruppe traf sich.",
+          meanings: ["die Gruppe", "traf", ""],
+        },
+        { position: 1, translation: null, meanings: ["ja", ""] },
+      ],
+    });
+  });
+
+  it("put_language_translations surfaces the server's per-sentence rejections", async () => {
+    mockFetch(
+      jsonResponse({
+        accepted: 1,
+        rejected: [
+          { position: 7, reason: "meanings_length_mismatch", expected: 12, got: 11 },
+        ],
+        sentences_drafted: 96,
+        sentence_count: 118,
+      }),
+    );
+    const result = await call("put_language_translations", {
+      submission_id: "s1",
+      language: "fr",
+      sentences: [{ position: 7, translation: "x", meanings: ["y"] }],
+    });
+    const payload = JSON.parse(textOf(result));
+    expect(payload.rejected[0].reason).toBe("meanings_length_mismatch");
+    expect(payload.rejected[0].expected).toBe(12);
+    expect(payload.sentences_drafted).toBe(96);
+    // generator omitted -> not serialised.
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      sentences: [{ position: 7, translation: "x", meanings: ["y"] }],
+    });
+  });
+
+  it("put_language_translations rejects more than 100 sentences client-side", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
+    await expect(
+      call("put_language_translations", {
+        submission_id: "s1",
+        language: "fr",
+        sentences: Array.from({ length: 101 }, (_, i) => ({
+          position: i,
+          translation: "x",
+          meanings: [],
+        })),
+      }),
+    ).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("commit_language polls the apply job then resolves the sibling id", async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetchSequence([
+        jsonResponse({ job_id: "j1", language: "de-a2" }),
+        jsonResponse({ status: "processing", progress: 20 }),
+        jsonResponse({ status: "completed", progress: 100 }),
+        jsonResponse({
+          source_language: "de",
+          languages: [
+            {
+              language: "de-a2",
+              submission_id: "sib1",
+              status: "ready",
+              is_primary: false,
+            },
+          ],
+          available_targets: [],
+          simplify_targets: [],
+          drafts: [],
+        }),
+      ]);
+      const p = call("commit_language", {
+        submission_id: "s1",
+        language: "de-a2",
+      });
+      await vi.advanceTimersByTimeAsync(2100);
+      const payload = JSON.parse(textOf(await p));
+      expect(payload.status).toBe("completed");
+      expect(payload.language).toBe("de-a2");
+      expect(payload.submission_id).toBe("sib1");
+      expect(lastUrl).toBe("https://api.test/api/v1/submissions/s1/languages");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("commit_language reports a failed apply job for retry", async () => {
+    mockFetchSequence([
+      jsonResponse({ job_id: "j2", language: "fr" }),
+      jsonResponse({ status: "failed", error: "boom" }),
+    ]);
+    const result = await call("commit_language", {
+      submission_id: "s1",
+      language: "fr",
+    });
+    const payload = JSON.parse(textOf(result));
+    expect(payload.status).toBe("failed");
+    expect(payload.error).toBe("boom");
+    expect(payload.message).toContain("commit_language again");
+  });
+
+  it("commit_language surfaces a 409 incomplete draft with the missing positions", async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          detail: {
+            missing_positions_count: 3,
+            first_missing_positions: [5, 9, 12],
+          },
+        },
+        409,
+      ),
+    );
+    const result = await call("commit_language", {
+      submission_id: "s1",
+      language: "de-a2",
+    });
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("409");
+    expect(text).toContain("missing_positions_count");
+  });
+
+  it("discard_language_draft DELETEs the draft and returns the count", async () => {
+    mockFetch(jsonResponse({ deleted_sentences: 96 }));
+    const result = await call("discard_language_draft", {
+      submission_id: "s1",
+      language: "DE-A2",
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/submissions/s1/translations/de-a2",
+    );
+    expect(lastInit.method).toBe("DELETE");
+    expect(JSON.parse(textOf(result))).toEqual({ deleted_sentences: 96 });
+  });
+
+  it("a write tool surfaces a 403 naming the translations:write scope", async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          detail: "This token is missing the required scope(s): translations:write",
+        },
+        403,
+      ),
+    );
+    const result = await call("add_language", {
+      submission_id: "s1",
+      languages: ["fr"],
+    });
+    expect(result.isError).toBe(true);
+    const text = textOf(result);
+    expect(text).toContain("translations:write");
+    expect(text).toContain("Mint a new token");
   });
 });

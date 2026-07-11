@@ -33,6 +33,99 @@ export interface DeckExportStatus {
   download_url?: string;
 }
 
+/** One target language present on a submission's fan-out group. */
+export interface SubmissionLanguage {
+  language: string;
+  submission_id: string;
+  status: string;
+  is_primary: boolean;
+}
+
+/** An in-progress agent-supplied translation draft for one language. */
+export interface DraftSummary {
+  language: string;
+  sentences_drafted: number;
+  sentence_count: number;
+}
+
+/** Result of GET /submissions/{id}/languages. */
+export interface SubmissionLanguages {
+  source_language: string;
+  languages: SubmissionLanguage[];
+  /** Ordinary Groq targets addable via add_language (source + existing removed). */
+  available_targets: string[];
+  /** Leveled same-language codes (e.g. de-a2) for the draft flow only. */
+  simplify_targets: string[];
+  drafts: DraftSummary[];
+}
+
+/** One source token as the Groq translator would see it. */
+export interface SourceToken {
+  surface: string;
+  lemma: string;
+  pos: string;
+  pivot_meaning: string;
+}
+
+/** One source sentence to translate, with its pivot-language gloss. */
+export interface SourceSentence {
+  position: number;
+  text: string;
+  pivot_translation: string;
+  tokens: SourceToken[];
+}
+
+/** Result of GET /submissions/{id}/translation-source (one page). */
+export interface TranslationSource {
+  source_language: string;
+  pivot_language: string;
+  sentence_count: number;
+  sentences: SourceSentence[];
+  /** null when the page exhausts the submission. */
+  next_from_position: number | null;
+}
+
+/** Result of POST /submissions/{id}/languages (Groq fan-out trigger). */
+export interface AddLanguagesResult {
+  jobs: { language: string; job_id: string }[];
+  skipped: { language: string; reason: string }[];
+}
+
+/** One draft sentence in a PUT batch: whole-sentence target text (null = no
+ *  sentence back) plus one meaning per source token, in order. */
+export interface DraftSentence {
+  position: number;
+  translation: string | null;
+  meanings: string[];
+}
+
+/** Result of PUT /submissions/{id}/translations/{language}. */
+export interface PutTranslationsResult {
+  accepted: number;
+  rejected: { position: number; reason: string; expected?: number; got?: number }[];
+  sentences_drafted: number;
+  sentence_count: number;
+}
+
+/** Result of POST /submissions/{id}/translations/{language}/commit. */
+export interface CommitDraftResult {
+  job_id: string;
+  language: string;
+}
+
+/** Result of GET /jobs/{id}: status of a fan-out or draft-apply job. */
+export interface JobStatus {
+  status: string;
+  progress?: number;
+  step?: string | null;
+  error?: string | null;
+}
+
+/** Result of DELETE /submissions/{id}/translations/{language}. */
+export interface DeleteDraftResult {
+  deleted_sentences: number;
+}
+
 export type QueryValue = string | number | boolean | undefined | null;
 
 /** How long any single request may take before we abort it. */
@@ -192,6 +285,35 @@ export class LingoChunkClient {
     return (await res.json()) as T;
   }
 
+  /** PUT a JSON body to an endpoint and parse the JSON response. */
+  private async putJson<T>(path: string, body: unknown): Promise<T> {
+    const headers = this.authHeaders("application/json");
+    headers["Content-Type"] = "application/json";
+    const res = await fetch(this.buildUrl(path), {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      await this.raiseForStatus(res);
+    }
+    return (await res.json()) as T;
+  }
+
+  /** DELETE an endpoint that returns a JSON body (unlike deleteNoContent). */
+  private async deleteJson<T>(path: string): Promise<T> {
+    const res = await fetch(this.buildUrl(path), {
+      method: "DELETE",
+      headers: this.authHeaders("application/json"),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      await this.raiseForStatus(res);
+    }
+    return (await res.json()) as T;
+  }
+
   // --- Read endpoints (thin pass-throughs; the tools shape the arguments) ---
 
   getVocabulary(params: Record<string, QueryValue>): Promise<unknown> {
@@ -287,5 +409,84 @@ export class LingoChunkClient {
     const data = Buffer.from(await res.arrayBuffer());
     const contentType = res.headers.get("content-type") ?? "audio/mpeg";
     return { data, contentType };
+  }
+
+  // --- Language / translation endpoints (phase 4) -------------------------
+
+  /** (a) The submission's fan-out group languages, addable targets, leveled
+   *  simplify targets, and in-progress drafts. */
+  listSubmissionLanguages(submissionId: string): Promise<SubmissionLanguages> {
+    return this.getJson(
+      `/submissions/${encodeURIComponent(submissionId)}/languages`,
+    );
+  }
+
+  /** (b) A page of the primary's sentences (source text + pivot glosses) as the
+   *  Groq translator would see them, for the agent to translate. */
+  getTranslationSource(
+    submissionId: string,
+    params: Record<string, QueryValue>,
+  ): Promise<TranslationSource> {
+    return this.getJson(
+      `/submissions/${encodeURIComponent(submissionId)}/translation-source`,
+      params,
+    );
+  }
+
+  /** (c) Trigger the server-side Groq fan-out into extra ordinary target
+   *  languages; returns a job per accepted language plus per-code skips. */
+  addLanguages(
+    submissionId: string,
+    languages: string[],
+  ): Promise<AddLanguagesResult> {
+    return this.postJson(
+      `/submissions/${encodeURIComponent(submissionId)}/languages`,
+      { languages },
+    );
+  }
+
+  /** (d) Upsert a batch of agent-supplied draft sentences for one language. */
+  putTranslations(
+    submissionId: string,
+    language: string,
+    body: { generator?: string; sentences: DraftSentence[] },
+  ): Promise<PutTranslationsResult> {
+    return this.putJson(
+      `/submissions/${encodeURIComponent(submissionId)}/translations/${encodeURIComponent(
+        language,
+      )}`,
+      body,
+    );
+  }
+
+  /** (e) Validate a complete draft and enqueue the apply job that mints the
+   *  sibling submission. 409 when the draft misses sentence positions. */
+  commitTranslationDraft(
+    submissionId: string,
+    language: string,
+  ): Promise<CommitDraftResult> {
+    return this.postJson(
+      `/submissions/${encodeURIComponent(submissionId)}/translations/${encodeURIComponent(
+        language,
+      )}/commit`,
+    );
+  }
+
+  /** (f) Owner-scoped job status, for polling a fan-out (c) or draft-apply (e)
+   *  job to completion. */
+  getJob(jobId: string): Promise<JobStatus> {
+    return this.getJson(`/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  /** (g) Delete the draft rows for one language (never a committed sibling). */
+  deleteTranslationDraft(
+    submissionId: string,
+    language: string,
+  ): Promise<DeleteDraftResult> {
+    return this.deleteJson(
+      `/submissions/${encodeURIComponent(submissionId)}/translations/${encodeURIComponent(
+        language,
+      )}`,
+    );
   }
 }

@@ -127,10 +127,12 @@ function params(obj: object): Record<string, QueryValue> {
   return obj as Record<string, QueryValue>;
 }
 
-const EXPORT_POLL_INTERVAL_MS = 2_000;
-const EXPORT_POLL_BUDGET_MS = 60_000;
+// Shared cadence for the async-job pollers (deck export and language apply):
+// both start a job then poll its status to completion.
+const POLL_INTERVAL_MS = 2_000;
+const POLL_BUDGET_MS = 60_000;
 // Fallback wait when a 429 carries no Retry-After.
-const EXPORT_RETRY_FALLBACK_MS = 5_000;
+const POLL_RETRY_FALLBACK_MS = 5_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,7 +157,7 @@ async function triggerExport(
       const wait =
         err.retryAfter && err.retryAfter > 0
           ? err.retryAfter * 1000
-          : EXPORT_RETRY_FALLBACK_MS;
+          : POLL_RETRY_FALLBACK_MS;
       await sleep(Math.min(wait, remaining));
     }
   }
@@ -170,7 +172,7 @@ async function exportAndPoll(
   client: LingoChunkClient,
   deckId: number,
 ): Promise<CallToolResult> {
-  const deadline = Date.now() + EXPORT_POLL_BUDGET_MS;
+  const deadline = Date.now() + POLL_BUDGET_MS;
   if (!(await triggerExport(client, deckId, deadline))) {
     return jsonResult({
       status: "pending",
@@ -207,7 +209,99 @@ async function exportAndPoll(
           "re-trigger if a later call reports 'failed' or 'none'.",
       });
     }
-    await sleep(EXPORT_POLL_INTERVAL_MS);
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
+/** POST the draft commit, absorbing a 429 with a Retry-After backoff (capped by
+ *  the remaining budget) rather than aborting. Returns the apply job id, or null
+ *  when the budget runs out mid-backoff. A 400/403/404/409 bubbles up. */
+async function commitDraft(
+  client: LingoChunkClient,
+  submissionId: string,
+  language: string,
+  deadline: number,
+): Promise<string | null> {
+  for (;;) {
+    try {
+      const { job_id } = await client.commitTranslationDraft(
+        submissionId,
+        language,
+      );
+      return job_id;
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 429) throw err;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      const wait =
+        err.retryAfter && err.retryAfter > 0
+          ? err.retryAfter * 1000
+          : POLL_RETRY_FALLBACK_MS;
+      await sleep(Math.min(wait, remaining));
+    }
+  }
+}
+
+/** Commit a language draft, then poll the apply job for up to ~60s. On success
+ *  resolve the new sibling's submission id via list_languages. A 409 (the draft
+ *  is missing sentence positions) or 403 bubbles up as an ApiError. */
+async function commitAndPoll(
+  client: LingoChunkClient,
+  submissionId: string,
+  language: string,
+): Promise<CallToolResult> {
+  const deadline = Date.now() + POLL_BUDGET_MS;
+  const jobId = await commitDraft(client, submissionId, language, deadline);
+  if (jobId === null) {
+    return jsonResult({
+      status: "processing",
+      language,
+      message:
+        "Rate limited before the commit could start; call commit_language " +
+        "again shortly (a duplicate commit converges safely).",
+    });
+  }
+  for (;;) {
+    const job = await client.getJob(jobId);
+    if (job.status === "completed") {
+      let siblingId: string | undefined;
+      try {
+        const langs = await client.listSubmissionLanguages(submissionId);
+        siblingId = langs.languages.find(
+          (l) => l.language === language,
+        )?.submission_id;
+      } catch {
+        // The apply succeeded; failing to resolve the sibling id is non-fatal.
+      }
+      return jsonResult({
+        status: "completed",
+        language,
+        submission_id: siblingId,
+        job_id: jobId,
+      });
+    }
+    if (job.status === "failed") {
+      return jsonResult({
+        status: "failed",
+        language,
+        job_id: jobId,
+        error: job.error ?? null,
+        message:
+          "The apply job failed. Check the draft with list_languages, then " +
+          "call commit_language again to retry.",
+      });
+    }
+    if (Date.now() >= deadline) {
+      return jsonResult({
+        status: "processing",
+        language,
+        job_id: jobId,
+        message:
+          "Still applying. Call list_languages shortly to see the new " +
+          "sibling's status; do not re-commit unless it never appears.",
+      });
+    }
+    await sleep(POLL_INTERVAL_MS);
   }
 }
 
@@ -815,5 +909,236 @@ export function registerTools(
         await client.deleteLesson(lesson_id);
         return { deleted: true, lesson_id };
       }),
+  );
+
+  // --- Language / translation tools (phase 4) -----------------------------
+
+  server.registerTool(
+    "list_languages",
+    {
+      title: "List submission languages",
+      description:
+        "List a submission's target languages and how to add more. Returns " +
+        "'languages' (the fan-out group so far, each with its own " +
+        "submission_id, status and is_primary flag), 'available_targets' " +
+        "(ordinary languages you can hand to add_language for the server-side " +
+        "Groq fan-out), 'simplify_targets' (leveled same-language codes like " +
+        "'de-a2' = German audio glossed in simpler A2 German, which ONLY the " +
+        "draft flow accepts) and 'drafts' (in-progress agent translations with " +
+        "sentences_drafted / sentence_count). Use it to choose a target and to " +
+        "poll a target's status after add_language or commit_language. " +
+        "Requires the content:read scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+      },
+    },
+    async ({ submission_id }) =>
+      runJson(() => client.listSubmissionLanguages(submission_id)),
+  );
+
+  server.registerTool(
+    "add_language",
+    {
+      title: "Add languages (server-side fan-out)",
+      description:
+        "Fan a submission out into extra ORDINARY target languages " +
+        "server-side (Groq translation; spends none of your tokens). Pass " +
+        "1-10 language codes from list_languages' available_targets; returns a " +
+        "job per accepted language and a 'skipped' list (e.g. the source " +
+        "language, an existing sibling, or a leveled code with reason " +
+        "'agent_only_target'). Poll list_languages until each new sibling's " +
+        "status is 'ready'. Leveled same-language codes (en-a2, de-b1, ...) " +
+        "are NOT accepted here: translate and commit them yourself via " +
+        "get_translation_source + put_language_translations + commit_language. " +
+        "Requires the translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+        languages: z
+          .array(
+            z
+              .string()
+              .min(1)
+              .transform((v) => v.trim().toLowerCase()),
+          )
+          .min(1)
+          .max(10)
+          .describe(
+            "1-10 ordinary target codes from available_targets " +
+              "(normalised to lowercase).",
+          ),
+      },
+    },
+    async ({ submission_id, languages }) =>
+      runJson(() => client.addLanguages(submission_id, languages)),
+  );
+
+  server.registerTool(
+    "get_translation_source",
+    {
+      title: "Get translation source",
+      description:
+        "Page through the primary submission's sentences to translate " +
+        "yourself. Each sentence gives the source 'text', a " +
+        "'pivot_translation' (the whole sentence in the pivot language) and " +
+        "'tokens' (surface, lemma, pos and a 'pivot_meaning' that FIXES each " +
+        "word's sense in context). THE CONTRACT you must honour when you " +
+        "translate: produce exactly one meaning per token, in the same order, " +
+        "same length as 'tokens'; render the sense the 'pivot_meaning' fixes " +
+        "(do not re-interpret the word); PUNCT and INTJ tokens map to \"\"; " +
+        "proper nouns stay as the name; never copy the pivot or source word " +
+        "verbatim as its meaning. Read the lingochunk-add-language skill for " +
+        "the full per-level rules (ordinary target vs leveled same-language). " +
+        "Page with 'from_position' (0-based) until 'next_from_position' is " +
+        "null. Only the READY primary of a group is a valid source. Requires " +
+        "the content:read scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+        from_position: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("0-based sentence position to start from (default 0)."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Sentences per page (max 100)."),
+      },
+    },
+    async ({ submission_id, ...rest }) =>
+      runJson(() => client.getTranslationSource(submission_id, params(rest))),
+  );
+
+  server.registerTool(
+    "put_language_translations",
+    {
+      title: "Put draft translations",
+      description:
+        "Upload a batch of your draft sentences for one target or leveled " +
+        "language (1-100 per call; page with get_translation_source and PUT " +
+        "25-50 at a time). Each sentence carries its 0-based 'position', a " +
+        "whole-sentence 'translation' (or null to leave the sentence back " +
+        "blank - hide-on-fail for leveled decks) and 'meanings' (one per " +
+        "source token, SAME ORDER and EXACT length as that sentence's " +
+        "tokens). The server validates each sentence against the real " +
+        "transcript and returns a 'rejected' list (meanings_length_mismatch " +
+        "with expected/got, unknown position, oversize strings) while " +
+        "ACCEPTING the rest - fix the rejected ones and PUT them again. " +
+        "'sentences_drafted' / 'sentence_count' track completeness. Set " +
+        "'generator' to the model producing the translations, for provenance. " +
+        "Keep a local tally of covered positions: commit_language needs every " +
+        "one. Requires the translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+        language: z
+          .string()
+          .min(1)
+          .transform((v) => v.trim().toLowerCase())
+          .describe(
+            "The target or leveled code being drafted (normalised to " +
+              "lowercase).",
+          ),
+        generator: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Model producing the translations, recorded for provenance."),
+        sentences: z
+          .array(
+            z.object({
+              position: z
+                .number()
+                .int()
+                .min(0)
+                .describe("0-based sentence position from get_translation_source."),
+              translation: z
+                .string()
+                .nullable()
+                .optional()
+                .describe("Whole-sentence text, or null for no sentence back."),
+              meanings: z
+                .array(z.string())
+                .describe(
+                  "One meaning per source token, same order and exact length " +
+                    "as the sentence's tokens.",
+                ),
+            }),
+          )
+          .min(1)
+          .max(100)
+          .describe("1-100 draft sentences."),
+      },
+    },
+    async ({ submission_id, language, generator, sentences }) =>
+      runJson(() =>
+        client.putTranslations(submission_id, language, {
+          generator,
+          sentences: sentences.map((s) => ({
+            position: s.position,
+            translation: s.translation ?? null,
+            meanings: s.meanings,
+          })),
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "commit_language",
+    {
+      title: "Commit a language draft",
+      description:
+        "Validate a complete draft for one language and apply it, minting a " +
+        "new sibling submission (its own deck). The draft must cover EVERY " +
+        "sentence position of the primary: a 409 lists the missing count and " +
+        "first missing positions - PUT those with put_language_translations, " +
+        "then commit again. This starts the apply job and polls it for up to " +
+        "~60s: it returns {status:'completed', submission_id} with the new " +
+        "sibling's id when ready, {status:'processing'} (call list_languages " +
+        "shortly to check) if it is still applying, or {status:'failed'} to " +
+        "retry. A duplicate commit while a job is in flight converges safely. " +
+        "Requires the translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+        language: z
+          .string()
+          .min(1)
+          .transform((v) => v.trim().toLowerCase())
+          .describe(
+            "The target or leveled code to commit (normalised to lowercase).",
+          ),
+      },
+    },
+    async ({ submission_id, language }) =>
+      runResult(() => commitAndPoll(client, submission_id, language)),
+  );
+
+  server.registerTool(
+    "discard_language_draft",
+    {
+      title: "Discard a language draft",
+      description:
+        "Permanently delete the in-progress draft sentences for one language " +
+        "on a submission (NOT any committed sibling deck - those are " +
+        "untouched). Destructive: only discard a draft the user has asked to " +
+        "abandon or restart. Returns {deleted_sentences}. Requires the " +
+        "translations:write scope.",
+      annotations: { destructiveHint: true, idempotentHint: true },
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The submission id."),
+        language: z
+          .string()
+          .min(1)
+          .transform((v) => v.trim().toLowerCase())
+          .describe(
+            "The target or leveled code whose draft to delete (normalised to " +
+              "lowercase).",
+          ),
+      },
+    },
+    async ({ submission_id, language }) =>
+      runJson(() => client.deleteTranslationDraft(submission_id, language)),
   );
 }
