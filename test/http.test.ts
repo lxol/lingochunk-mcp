@@ -168,4 +168,67 @@ describe("hosted HTTP server", () => {
     const health = await fetch(new URL("/mcp/health", mcpUrl));
     expect(health.status).toBe(200);
   });
+
+  it("authenticates via a tokened URL (/t/<token>) for clients with no token field", async () => {
+    // claude.ai custom connectors offer only OAuth or nothing - no header
+    // field - so the credential can ride the URL path instead.
+    const transport = new StreamableHTTPClientTransport(
+      new URL("/t/lcp_urltoken", mcpUrl),
+    );
+    const client = new Client({ name: "url-token-test", version: "0.0.0" });
+    await client.connect(transport);
+    try {
+      upstreamAuth.length = 0;
+      await client.callTool({
+        name: "get_audio_url",
+        arguments: { submission_id: "sub-3" },
+      });
+      expect(upstreamAuth).toEqual(["Bearer lcp_urltoken"]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("also accepts the tokened URL under the /mcp prefix (direct access)", async () => {
+    const res = await fetch(new URL("/mcp/t/lcp_x", mcpUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }),
+    });
+    expect(res.status).toBe(200); // past the auth gate, handled by the transport
+  });
+
+  it("an Authorization header outranks the URL token", async () => {
+    const transport = new StreamableHTTPClientTransport(
+      new URL("/t/lcp_from_url", mcpUrl),
+      { requestInit: { headers: { Authorization: "Bearer lcp_from_header" } } },
+    );
+    const client = new Client({ name: "precedence-test", version: "0.0.0" });
+    await client.connect(transport);
+    try {
+      upstreamAuth.length = 0;
+      await client.callTool({
+        name: "get_audio_url",
+        arguments: { submission_id: "sub-4" },
+      });
+      expect(upstreamAuth).toEqual(["Bearer lcp_from_header"]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("a blank URL token still 401s", async () => {
+    const res = await fetch(new URL("/t/%20", mcpUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 }),
+    });
+    expect(res.status).toBe(401);
+  });
 });

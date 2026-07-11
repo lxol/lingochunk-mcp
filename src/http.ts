@@ -66,7 +66,9 @@ function unauthorized(res: ServerResponse): void {
         message:
           "Authentication required. Create a personal access token in your " +
           "LingoChunk account settings (Settings -> API tokens, it starts " +
-          "with 'lcp_') and send it as 'Authorization: Bearer <token>'.",
+          "with 'lcp_') and send it as 'Authorization: Bearer <token>'. " +
+          "For clients without a token field (e.g. claude.ai custom " +
+          "connectors), put it in the URL instead: /mcp/t/<token>.",
       },
       id: null,
     },
@@ -125,7 +127,25 @@ async function handle(
   // https://host/mcp arrive here as "/"; run directly (docker -p), they
   // arrive as "/mcp". Health likewise answers /health and /mcp/health.
   const rawPath = new URL(req.url ?? "/", "http://localhost").pathname;
-  const path = rawPath === "/" ? "/mcp" : rawPath.replace(/^\/mcp\/health$/, "/health");
+  let path =
+    rawPath === "/mcp" || rawPath === "/"
+      ? "/"
+      : rawPath.startsWith("/mcp/")
+        ? rawPath.slice("/mcp".length)
+        : rawPath;
+
+  // Tokened-URL auth: /t/<token> is the MCP wire with the credential in the
+  // path, for clients whose connector UI has no header/token field and no
+  // OAuth-less fallback (claude.ai custom connectors). The URL is then a
+  // secret - it lands in proxy/access logs - which is acceptable as a
+  // documented stopgap because PATs are scoped and one-click revocable.
+  // An Authorization header, when present, still wins below.
+  let pathToken: string | null = null;
+  const tokened = /^\/t\/([^/]+)$/.exec(path);
+  if (tokened?.[1]) {
+    pathToken = decodeURIComponent(tokened[1]).trim() || null;
+    path = "/";
+  }
 
   if (req.method === "OPTIONS") {
     res.writeHead(204).end();
@@ -142,7 +162,7 @@ async function handle(
     return;
   }
 
-  if (path !== "/mcp") {
+  if (path !== "/") {
     sendJson(res, 404, { detail: "Not found. The MCP endpoint is POST /mcp." });
     return;
   }
@@ -165,7 +185,7 @@ async function handle(
     return;
   }
 
-  const token = bearerToken(req);
+  const token = bearerToken(req) ?? pathToken;
   if (!token) {
     unauthorized(res);
     return;

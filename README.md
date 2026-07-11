@@ -125,7 +125,7 @@ tokens) sent as a Bearer credential:
 
 | Client | Where |
 |---|---|
-| claude.ai (web/desktop/mobile, incl. Free) | Settings -> Connectors -> *Add custom connector* -> URL; put the token under Advanced settings |
+| claude.ai (web/desktop/mobile, incl. Free) | Settings -> Connectors -> *Add custom connector* -> URL `https://lingochunk.com/mcp/t/lcp_...` (your token IN the URL - claude.ai has no token field and OAuth sign-in is not built yet; leave the OAuth fields empty) |
 | Claude Code | `claude mcp add --transport http lingochunk https://lingochunk.com/mcp --header "Authorization: Bearer lcp_..."` |
 | ChatGPT (paid plans) | Settings -> enable *Developer mode* -> Apps -> "+" -> URL + your token |
 | Mistral Le Chat | *+ Add Connector* -> Custom MCP Connector -> URL (auth auto-detected) |
@@ -134,6 +134,13 @@ tokens) sent as a Bearer credential:
 Differences from the local server: `get_audio_clip` is unavailable (it writes
 files, which only makes sense on your own machine - use `get_audio_url`), and
 skills don't auto-load (paste a skill's `SKILL.md` as context instead).
+
+**If your client has no token field** (claude.ai custom connectors accept only
+OAuth or nothing), embed the token in the URL: `https://lingochunk.com/mcp/t/lcp_...`.
+That URL then IS a credential - treat it like a password, prefer a token with
+only the scopes you need, and revoke it in Settings if it ever leaks. A header,
+when your client supports one, is always preferred (URLs end up in access logs;
+headers don't). Proper OAuth sign-in is planned and will supersede this.
 
 ## Use with other agents
 
