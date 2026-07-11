@@ -1191,8 +1191,10 @@ export function registerTools(
         "were off (usually a UTF-16 vs code-point miscount), so delete_annotation " +
         "and create it again with corrected offsets. 'note' is markdown (1-5000 " +
         "chars), rendered natively in a bottom sheet - keep it to ~4 short " +
-        "lines. Leave start_time/end_time unset (the sheet hides Play without " +
-        "them). The episode has a cap (see list_annotations' max_annotations). " +
+        "lines. Leave start_time/end_time unset - the server derives the " +
+        "span's audio times from the transcript, so the note sheet's Play and " +
+        "the card clip work without them. The episode has a cap (see " +
+        "list_annotations' max_annotations). " +
         "Read the lingochunk-annotate skill for what is worth annotating and the " +
         "note format. Requires the annotations:write scope.",
       inputSchema: {

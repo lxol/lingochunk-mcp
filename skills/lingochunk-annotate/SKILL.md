@@ -97,8 +97,9 @@ miss the meaning:
      flach", not the whole clause). Use a **whole-sentence note** (omit
      `char_start`/`char_end`) only when the entire line IS the expression.
 5. **Create it.** `create_annotation(submission_id, sentence_id, char_start,
-   char_end, note)`. Leave `start_time`/`end_time` unset (the sheet hides Play
-   without them).
+   char_end, note)`. Leave `start_time`/`end_time` unset: the server derives
+   the span's audio times from the transcript's word timings, so the note
+   sheet's Play button and the deck-card clip work without them.
 6. **Verify the span.** The response echoes `selected_text` =
    `display[char_start:char_end]`. Check it equals the expression you meant. On a
    mismatch your offsets were off (usually a UTF-16 vs code-point miscount):
@@ -158,4 +159,5 @@ Example: Bleib ruhig und halt den Ball flach, bis wir mehr wissen.
 - **Budget, do not flood.** Stay in the 15 to 40 range, well under
   `max_annotations`; skip words the vocabulary deck already carries.
 - **Only the user's own episodes.** Owner-scoped; a foreign submission is a 404.
-- **No audio handling.** The note anchors to text; leave the audio span empty.
+- **No audio handling.** The note anchors to text; the server derives the
+  audio span from the transcript, so never send times yourself.
