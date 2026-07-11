@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "LingoChunk Public API",
-    "description": "The LingoChunk public API. Read your FSRS-graded vocabulary, look words up, browse your library, pull sliced transcripts and native audio, search your listening history, and cut audio clips.\n\nWrite, too: add vocabulary and custom cards to your decks, export a deck to Anki, and save a generated HTML lesson to your library.\n\nAuthenticate with a personal access token created in your account settings: send it as `Authorization: Bearer lcp_...`. Each endpoint requires a scope, granted to the token at creation.",
-    "version": "1.1"
+    "description": "The LingoChunk public API. Read your FSRS-graded vocabulary, look words up, browse your library, pull sliced transcripts and native audio, search your listening history, and cut audio clips.\n\nWrite, too: upload audio recordings for processing (optionally publishing them into a collection you own), add vocabulary and custom cards to your decks, export a deck to Anki, and save a generated HTML lesson to your library.\n\nAuthenticate with a personal access token created in your account settings: send it as `Authorization: Bearer lcp_...`. Each endpoint requires a scope, granted to the token at creation.",
+    "version": "1.3"
   },
   "servers": [
     {
@@ -1847,6 +1847,1070 @@
           "lessons:write"
         ]
       }
+    },
+    "/api/v1/submissions": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Create Submission",
+        "description": "Upload an audio recording and queue it for processing (transcription,\nchunking, vocabulary enrichment). Accepts any audio format ffmpeg can\ndecode, including the ``audio/webm`` (Opus) files that MediaRecorder\nproduces. Poll ``/v1/submissions/{id}/status`` until ``ready``.\n\nUploads count against your plan's daily-submission and monthly audio\nquotas, and the file must be within your plan's size and duration caps.\n\n**Requires scope:** `submissions:write`",
+        "operationId": "create_submission_api_v1_submissions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_submission_api_v1_submissions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionCreatedV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds the size cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Uploads temporarily paused (service under elevated load)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "submissions:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/status": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Submission Status",
+        "description": "Processing status of one of your submissions. Owner-only — this is the\npoll target after an upload, unlike the content:read endpoints which also\nserve published collection content.\n\n**Requires scope:** `submissions:write`",
+        "operationId": "submission_status_api_v1_submissions__submission_id__status_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionStatusV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "submissions:write"
+        ]
+      }
+    },
+    "/api/v1/collections": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "List Collections",
+        "description": "The collections you may publish a submission to: the ones you own\n(admins additionally see every collection, mirroring the app's publish\npicker). Use a slug from here as the ``collection`` field of an upload.\n\n**Requires scope:** `submissions:write`",
+        "operationId": "list_collections_api_v1_collections_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionListV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "submissions:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/languages": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "List Submission Languages",
+        "description": "The language landscape of one of your lessons: which languages it already\nexists in, which ordinary targets can be added via the Groq fan-out, which\nleveled same-language targets can be drafted, and any drafts in progress.\n\n**Requires scope:** `content:read`",
+        "operationId": "list_submission_languages_api_v1_submissions__submission_id__languages_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionLanguagesV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "content:read"
+        ]
+      },
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Add Languages",
+        "description": "Trigger the internal Groq fan-out for ordinary target languages. Returns\none job id per enqueued language (poll /v1/jobs/{job_id}); leveled\npseudo-codes are skipped with reason ``agent_only_target`` (use the draft\nflow for those). No email is sent.\n\n**Requires scope:** `translations:write`",
+        "operationId": "add_languages_api_v1_submissions__submission_id__languages_post",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddLanguagesRequestV1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddLanguagesResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/translation-source": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Get Translation Source",
+        "description": "A page of source sentences to translate: the source text, the pivot\ntranslation, and the ordered tokens with their pivot meanings. Page with\n``from_position`` / ``next_from_position``. Only a READY primary submission\nis a valid source.\n\n**Requires scope:** `content:read`",
+        "operationId": "get_translation_source_api_v1_submissions__submission_id__translation_source_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "from_position",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "From Position"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationSourceV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "content:read"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/translations/{language}": {
+      "put": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Put Translations",
+        "description": "Upsert a batch (1..100) of drafted sentences for one language. Each\nsentence is validated against the primary's real tokens; an invalid sentence\nis rejected individually (with a reason) while the rest are stored. Re-PUT a\nposition to replace it.\n\n**Requires scope:** `translations:write`",
+        "operationId": "put_translations_api_v1_submissions__submission_id__translations__language__put",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutTranslationsRequestV1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutTranslationsResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Delete Language Draft",
+        "description": "Discard a language's draft (the draft rows only; never a committed\nsibling). Returns how many drafted sentences were removed.\n\n**Requires scope:** `translations:write`",
+        "operationId": "delete_language_draft_api_v1_submissions__submission_id__translations__language__delete",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteDraftResultV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/translations/{language}/commit": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Commit Language",
+        "description": "Commit a complete draft: enqueue the job that mints the sibling\nsubmission. 409 (with the missing positions) if any sentence still lacks a\ndraft. Poll the returned job id via /v1/jobs/{job_id}.\n\n**Requires scope:** `translations:write`",
+        "operationId": "commit_language_api_v1_submissions__submission_id__translations__language__commit_post",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitLanguageResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The draft does not yet cover every sentence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncompleteDraftV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Get Job Status",
+        "description": "Poll a fan-out / commit job. Owner-only (the job's submission's owner).\nStatus is normalised to processing | completed | failed.\n\n**Requires scope:** `content:read`",
+        "operationId": "get_job_status_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "content:read"
+        ]
+      }
     }
   },
   "components": {
@@ -1972,6 +3036,53 @@
         "title": "AddCardRequest",
         "description": "Add a card to the learner's SRS (their system of record for word knowledge).\n\n``kind=vocab`` adds a word the learner already has in their vocabulary,\nresolved by ``lemma`` across their accessible content (pass ``submission_id``\nto disambiguate a lemma that appears in several episodes, or ``pos`` when it\nappears under several parts of speech). ``kind=custom`` adds a freeform\nfront/back card anchored to a submission.\n\nOmit ``deck_id`` to add to the deck for the card's own submission - the same\ndeck the app builds and reviews from - so the card is immediately visible,\nreviewable and exportable. Pass ``deck_id`` (from GET /decks) to target a\nspecific deck; it must be one of yours and must belong to the same\nsubmission the card anchors to."
       },
+      "AddLanguagesRequestV1": {
+        "properties": {
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Languages",
+            "description": "1..10 ordinary translation targets; leveled pseudo-codes are rejected here (use the draft/commit flow instead)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "languages"
+        ],
+        "title": "AddLanguagesRequestV1",
+        "description": "Target languages to trigger the internal Groq fan-out for."
+      },
+      "AddLanguagesResultV1": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/LanguageJobV1"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "description": "Enqueued translation jobs"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/LanguageSkipV1"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "description": "Targets skipped, each with a reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs",
+          "skipped"
+        ],
+        "title": "AddLanguagesResultV1",
+        "description": "Result of triggering the Groq fan-out for a set of targets."
+      },
       "AudioSlice": {
         "properties": {
           "start": {
@@ -2055,6 +3166,69 @@
         ],
         "title": "AudioUrlV1",
         "description": "A short-lived direct URL to the native audio (supports HTTP Range)."
+      },
+      "Body_create_submission_api_v1_submissions_post": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio",
+            "description": "Audio file (any ffmpeg format)"
+          },
+          "learning_language": {
+            "type": "string",
+            "title": "Learning Language",
+            "description": "Language being learned"
+          },
+          "native_language": {
+            "type": "string",
+            "title": "Native Language",
+            "description": "Language for translations"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level",
+            "description": "CEFR level (A1-C2)",
+            "default": "A2"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Submission title; defaults to the audio filename"
+          },
+          "collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection",
+            "description": "Slug of a collection you own to publish the submission to"
+          },
+          "notify": {
+            "type": "string",
+            "title": "Notify",
+            "description": "'true' to email you when processing finishes (opt-in)",
+            "default": "false"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio",
+          "learning_language",
+          "native_language"
+        ],
+        "title": "Body_create_submission_api_v1_submissions_post"
       },
       "CardExampleV1": {
         "properties": {
@@ -2375,6 +3549,24 @@
         "title": "CardV1Request",
         "description": "Create a fully-featured card from declarative anchors (format card.v1).\n\nThe caller supplies WHAT to teach (kind, headword, translation, note) and\nWHERE it lives in the recording (sentence position + verbatim focus span);\nthe server derives everything that makes native cards look good: the\nper-word highlight/blur map, the native-audio clip of the focus span, and\nthe forward+reverse pair for lexical kinds. Anchors are verified against\nthe stored transcript - a paraphrased example is rejected, never saved.\n\nKinds: word | phrase | collocation | idiom | chunk (lexical; forward +\nreverse pair, the headword is shown as a vocab-style entry) and grammar |\ncloze | contrast | qa | production (study kinds; forward-only, rendered\nwith a type chip and per-kind chrome). For grammar-family kinds the focus\nspan is the answer and is blurred in the example."
       },
+      "CollectionListV1": {
+        "properties": {
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/CollectionV1"
+            },
+            "type": "array",
+            "title": "Collections",
+            "description": "Publishable collections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "collections"
+        ],
+        "title": "CollectionListV1",
+        "description": "The collections the caller may publish submissions to."
+      },
       "CollectionRefV1": {
         "properties": {
           "slug": {
@@ -2395,6 +3587,66 @@
         ],
         "title": "CollectionRefV1",
         "description": "The collection a piece of content belongs to."
+      },
+      "CollectionV1": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "title": "Slug",
+            "description": "URL-safe collection identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable collection name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Collection description"
+          },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "description": "public | unlisted | private"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "visibility"
+        ],
+        "title": "CollectionV1",
+        "description": "A collection the caller may publish submissions to."
+      },
+      "CommitLanguageResultV1": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job id to poll via /v1/jobs/{job_id}"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The language being committed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "language"
+        ],
+        "title": "CommitLanguageResultV1",
+        "description": "The enqueued commit job for a drafted language."
       },
       "DeckExportStartV1": {
         "properties": {
@@ -2535,6 +3787,21 @@
         "title": "DeckSummaryV1",
         "description": "One of the learner's study decks, for discovering deck ids to add to or\nexport."
       },
+      "DeleteDraftResultV1": {
+        "properties": {
+          "deleted_sentences": {
+            "type": "integer",
+            "title": "Deleted Sentences",
+            "description": "How many draft rows were removed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_sentences"
+        ],
+        "title": "DeleteDraftResultV1",
+        "description": "Result of discarding a language's draft."
+      },
       "DialogueBlock": {
         "properties": {
           "type": {
@@ -2620,6 +3887,42 @@
         ],
         "title": "DialogueLine",
         "description": "One transcript sentence presented as a dialogue line.\n\n``position`` anchors the line to the stored sentence (the save route\nverifies ``text`` matches it, so a lesson cannot misattribute content to\nthe recording). ``highlights`` are [start, end) CODE-POINT ranges into\n``text`` for the amber pattern marks (both renderers treat them as code\npoints; supplementary-plane characters count as one). Ranges must not\noverlap - both renderers would otherwise duplicate the overlapped text."
+      },
+      "DraftSentenceV1": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "Sentence position in the primary"
+          },
+          "translation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation",
+            "description": "Whole-sentence target text, or null for no sentence line"
+          },
+          "meanings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Meanings",
+            "description": "One meaning per token, same order and length as the source sentence's tokens; '' for punctuation/interjections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "meanings"
+        ],
+        "title": "DraftSentenceV1",
+        "description": "One drafted sentence the agent submits (whole-sentence + per-token)."
       },
       "ErrorV1": {
         "properties": {
@@ -3163,6 +4466,183 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "IncompleteDraftV1": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "Human-readable error message"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Stable error code: incomplete_draft"
+          },
+          "missing_positions_count": {
+            "type": "integer",
+            "title": "Missing Positions Count",
+            "description": "How many sentence positions still lack a draft"
+          },
+          "first_missing_positions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "First Missing Positions",
+            "description": "Up to 20 of the missing positions, ascending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "code",
+          "missing_positions_count",
+          "first_missing_positions"
+        ],
+        "title": "IncompleteDraftV1",
+        "description": "409 body when a commit is attempted before every sentence is drafted."
+      },
+      "JobStatusV1": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "processing | completed | failed"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "description": "Progress percentage, 0-100",
+            "default": 0
+          },
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "description": "Name of the current step",
+            "default": ""
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Failure reason, when status is 'failed'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "JobStatusV1",
+        "description": "Status of a fan-out / commit job."
+      },
+      "LanguageDraftV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Draft target code (ordinary or leveled)"
+          },
+          "sentences_drafted": {
+            "type": "integer",
+            "title": "Sentences Drafted",
+            "description": "How many sentences have a draft row"
+          },
+          "sentence_count": {
+            "type": "integer",
+            "title": "Sentence Count",
+            "description": "Total sentences the primary has"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "sentences_drafted",
+          "sentence_count"
+        ],
+        "title": "LanguageDraftV1",
+        "description": "In-progress agent-supplied draft for a not-yet-committed language."
+      },
+      "LanguageJobV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Target language code"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job id to poll via /v1/jobs/{job_id}"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "job_id"
+        ],
+        "title": "LanguageJobV1",
+        "description": "One enqueued fan-out job."
+      },
+      "LanguageSiblingV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Translation-language code of this sibling"
+          },
+          "submission_id": {
+            "type": "string",
+            "title": "Submission Id",
+            "description": "Submission id of this language"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "pending | queued | processing | ready | failed"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "description": "True for the original submission the group fanned out from"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "submission_id",
+          "status",
+          "is_primary"
+        ],
+        "title": "LanguageSiblingV1",
+        "description": "One language a lesson already exists in (the primary or a sibling)."
+      },
+      "LanguageSkipV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The skipped target code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "source | already_exists | invalid_target | agent_only_target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "reason"
+        ],
+        "title": "LanguageSkipV1",
+        "description": "A target that was not enqueued, with a stable reason code."
+      },
       "LessonCreateRequest": {
         "properties": {
           "title": {
@@ -3231,6 +4711,16 @@
             ],
             "title": "Source Submission Ids",
             "description": "Optional provenance: the submissions the lesson was built from (up to 50 ids, each a 36-char submission id)"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "title": "Visibility",
+            "description": "'public' publishes the lesson to everyone who can view the source submission (e.g. visitors of a public collection it belongs to). Documents only, and only on a submission you own.",
+            "default": "private"
           }
         },
         "type": "object",
@@ -3307,6 +4797,12 @@
             ],
             "title": "Generator Skill",
             "description": "Self-declared slug of the skill that composed the lesson (from the document's 'generator' field; display metadata, lesson.v1 only)"
+          },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "description": "'private' (owner only) or 'public' (visible to everyone who can view the source submission)",
+            "default": "private"
           },
           "size_bytes": {
             "type": "integer",
@@ -3720,6 +5216,12 @@
             "title": "Generator Skill",
             "description": "Self-declared slug of the skill that composed the lesson (from the document's 'generator' field; display metadata, lesson.v1 only)"
           },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "description": "'private' (owner only) or 'public' (visible to everyone who can view the source submission)",
+            "default": "private"
+          },
           "size_bytes": {
             "type": "integer",
             "title": "Size Bytes",
@@ -3962,6 +5464,119 @@
         "title": "ProseBlock",
         "description": "Instruction lines and short passages. Plain text only."
       },
+      "PutTranslationsRequestV1": {
+        "properties": {
+          "generator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generator",
+            "description": "Identifier of the model/agent that produced the drafts"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/DraftSentenceV1"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Sentences",
+            "description": "1..100 drafted sentences"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sentences"
+        ],
+        "title": "PutTranslationsRequestV1",
+        "description": "A batch of drafted sentences for one target language."
+      },
+      "PutTranslationsResultV1": {
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "title": "Accepted",
+            "description": "Sentences stored (inserted or updated)"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedSentenceV1"
+            },
+            "type": "array",
+            "title": "Rejected",
+            "description": "Sentences refused, each with a reason"
+          },
+          "sentences_drafted": {
+            "type": "integer",
+            "title": "Sentences Drafted",
+            "description": "Total sentences now drafted for this language"
+          },
+          "sentence_count": {
+            "type": "integer",
+            "title": "Sentence Count",
+            "description": "Total sentences the primary has"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted",
+          "rejected",
+          "sentences_drafted",
+          "sentence_count"
+        ],
+        "title": "PutTranslationsResultV1",
+        "description": "Outcome of a draft batch: accepted count + per-sentence rejections."
+      },
+      "RejectedSentenceV1": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "Position of the rejected sentence"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "unknown_position | meanings_length_mismatch | meaning_too_long | translation_too_long"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected",
+            "description": "Expected token count (length mismatch only)"
+          },
+          "got": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Got",
+            "description": "Submitted meanings length (length mismatch only)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "reason"
+        ],
+        "title": "RejectedSentenceV1",
+        "description": "One drafted sentence the server refused, with the reason."
+      },
       "ReviewBlock": {
         "properties": {
           "type": {
@@ -4109,6 +5724,95 @@
         "title": "SentenceSearchV1",
         "description": "Search results across the learner's readable library.\n\nResults are a capped sample (see the ``limit`` parameter), not an\nexhaustive set: there is no pagination and no completeness guarantee."
       },
+      "SubmissionCreatedV1": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "title": "Submission Id",
+            "description": "Identifier of the new submission"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Identifier of the processing job"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Initial submission status; poll /v1/submissions/{id}/status until 'ready' or 'failed'"
+          },
+          "collection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionRefV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The collection the submission was published to, when a 'collection' slug was supplied"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submission_id",
+          "job_id",
+          "status"
+        ],
+        "title": "SubmissionCreatedV1",
+        "description": "The upload response: the new submission plus its processing job."
+      },
+      "SubmissionLanguagesV1": {
+        "properties": {
+          "source_language": {
+            "type": "string",
+            "title": "Source Language",
+            "description": "The audio / source language"
+          },
+          "languages": {
+            "items": {
+              "$ref": "#/components/schemas/LanguageSiblingV1"
+            },
+            "type": "array",
+            "title": "Languages",
+            "description": "Languages the lesson already exists in"
+          },
+          "available_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Targets",
+            "description": "Ordinary translation targets you may add via the Groq fan-out (source and existing languages removed)"
+          },
+          "simplify_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Simplify Targets",
+            "description": "Leveled same-language pseudo-codes you may draft for this source (e.g. de-a2), minus any already present"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/LanguageDraftV1"
+            },
+            "type": "array",
+            "title": "Drafts",
+            "description": "Agent drafts in progress for this submission"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_language",
+          "languages",
+          "available_targets",
+          "simplify_targets",
+          "drafts"
+        ],
+        "title": "SubmissionLanguagesV1",
+        "description": "The language landscape of a lesson: what exists, what can be added."
+      },
       "SubmissionRefV1": {
         "properties": {
           "id": {
@@ -4129,6 +5833,57 @@
         ],
         "title": "SubmissionRefV1",
         "description": "The submission a search hit came from."
+      },
+      "SubmissionStatusV1": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "title": "Submission Id",
+            "description": "Submission identifier"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "pending | queued | processing | ready | failed"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "description": "Pipeline progress, 0-100",
+            "default": 0
+          },
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "description": "Name of the current pipeline step",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable progress message",
+            "default": ""
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Failure reason, when status is 'failed'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submission_id",
+          "status"
+        ],
+        "title": "SubmissionStatusV1",
+        "description": "Processing status of a submission (poll after an upload)."
       },
       "TranscriptSentenceV1": {
         "properties": {
@@ -4233,6 +5988,123 @@
         ],
         "title": "TranscriptSliceV1",
         "description": "A (possibly sliced) transcript: the sentences plus enough context to page."
+      },
+      "TranslationSourceSentenceV1": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "Sentence position in the primary"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The source-language sentence"
+          },
+          "pivot_translation": {
+            "type": "string",
+            "title": "Pivot Translation",
+            "description": "The whole-sentence translation in the pivot language"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationSourceTokenV1"
+            },
+            "type": "array",
+            "title": "Tokens",
+            "description": "Tokens in order; one meaning per token, same length, is required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "text",
+          "pivot_translation",
+          "tokens"
+        ],
+        "title": "TranslationSourceSentenceV1",
+        "description": "One source sentence with its pivot translation and tokens to gloss."
+      },
+      "TranslationSourceTokenV1": {
+        "properties": {
+          "surface": {
+            "type": "string",
+            "title": "Surface",
+            "description": "The token as it appears in the sentence"
+          },
+          "lemma": {
+            "type": "string",
+            "title": "Lemma",
+            "description": "Dictionary base form"
+          },
+          "pos": {
+            "type": "string",
+            "title": "Pos",
+            "description": "Part of speech (spaCy tag)"
+          },
+          "pivot_meaning": {
+            "type": "string",
+            "title": "Pivot Meaning",
+            "description": "The word's meaning in the pivot language; fixes the sense the agent must render (do not re-interpret it)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surface",
+          "lemma",
+          "pos",
+          "pivot_meaning"
+        ],
+        "title": "TranslationSourceTokenV1",
+        "description": "One token the agent must gloss, with its resolved pivot sense."
+      },
+      "TranslationSourceV1": {
+        "properties": {
+          "source_language": {
+            "type": "string",
+            "title": "Source Language",
+            "description": "Audio / source language"
+          },
+          "pivot_language": {
+            "type": "string",
+            "title": "Pivot Language",
+            "description": "Language the primary is glossed in"
+          },
+          "sentence_count": {
+            "type": "integer",
+            "title": "Sentence Count",
+            "description": "Total sentences in the primary"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationSourceSentenceV1"
+            },
+            "type": "array",
+            "title": "Sentences",
+            "description": "This page of sentences"
+          },
+          "next_from_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next From Position",
+            "description": "Pass as from_position for the next page; null when exhausted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_language",
+          "pivot_language",
+          "sentence_count",
+          "sentences"
+        ],
+        "title": "TranslationSourceV1",
+        "description": "A page of source sentences for the agent to translate."
       },
       "ValidationError": {
         "properties": {
