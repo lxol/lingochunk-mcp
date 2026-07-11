@@ -16,8 +16,8 @@ contributions (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## What it gives an agent
 
-Eighteen tools, each wrapping one public endpoint. Nine read from your account;
-nine write to it.
+Twenty-two tools, each wrapping one public endpoint. Ten read from your account;
+twelve write to it.
 
 | Tool | Scope | What it does |
 |---|---|---|
@@ -39,8 +39,12 @@ nine write to it.
 | `put_language_translations` | `translations:write` | Uploads a batch (1-100) of agent-written draft sentences (whole-sentence translation + one meaning per token) for a target or leveled language; returns per-sentence rejections to repair. |
 | `commit_language` | `translations:write` | Validates a complete draft and applies it, minting the sibling deck; polls the job and returns the new submission id when ready. |
 | `discard_language_draft` | `translations:write` | Deletes the in-progress draft rows for a language (destructive; never a committed sibling). |
+| `list_annotations` | `content:read` | An episode's creator annotations (each a markdown note on a transcript sentence span), plus `count` and `max_annotations` so you can budget and avoid duplicates. |
+| `create_annotation` | `annotations:write` | Attaches a markdown creator note to a sentence span (Unicode code-point offsets into the sentence's `display`, or a whole-sentence note); the response echoes `selected_text` to verify the span. |
+| `update_annotation` | `annotations:write` | Replaces one annotation's note in place (the anchor stays put). |
+| `delete_annotation` | `annotations:write` | Deletes one annotation (destructive); also how you fix a mis-anchored span before re-creating it. |
 
-Plus four skills:
+Plus five skills:
 
 - **`lingochunk-lesson`** - composes a coursebook-style `lesson.v1` document
   (listen, text, vocabulary, one grammar point, graded exercises, review)
@@ -57,6 +61,11 @@ Plus four skills:
   target, or an agent-supplied translation you write sentence by sentence and
   commit - the only way to build a leveled same-language deck (e.g.
   "German (A2)", German audio glossed in simpler A2 German).
+- **`lingochunk-annotate`** - finds the genuinely useful expressions in one of
+  your episodes (idioms, phrasal verbs, collocations, discourse markers,
+  culture-bound references) and attaches a short markdown creator note to each
+  exact span: an iris tint + note sheet for you, a forward-only note card for
+  your followers.
 
 ## Prerequisites
 
@@ -64,9 +73,9 @@ Plus four skills:
 - A LingoChunk **personal access token**: in LingoChunk, open Settings -> API
   access, create a token, and grant the scopes you need (`vocab:read` +
   `content:read` cover the read tools; add `cards:write`, `decks:export`,
-  `lessons:write` and `translations:write` for the write tools). The token is
-  shown once and starts with `lcp_`. The 403 errors from the tools name the
-  exact scope you are missing.
+  `lessons:write`, `translations:write` and `annotations:write` for the write
+  tools). The token is shown once and starts with `lcp_`. The 403 errors from
+  the tools name the exact scope you are missing.
 
 ## Use it
 
@@ -233,6 +242,7 @@ skills/lingochunk-lesson/               the coursebook lesson skill
 skills/lingochunk-cards/                the flashcard (card.v1) skill
 skills/lingochunk-discuss/              the "discuss an episode" skill
 skills/lingochunk-add-language/         the add-language / draft-translation skill
+skills/lingochunk-annotate/             the useful-expression annotation skill
 skills/*/examples/                      example lesson.v1 documents (CI-validated)
 docs/skill-authoring.md                 how to write a new skill
 docs/skill-template.md                  SKILL.md starting point
