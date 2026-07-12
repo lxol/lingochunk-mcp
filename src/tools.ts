@@ -905,7 +905,11 @@ export function registerTools(
         "view URL. Exactly one of document/html. To catch every problem in one " +
         "pass, call validate_lesson FIRST and fix what it reports, then " +
         "save_lesson. File a lesson into a course (from create_course) with " +
-        "course_id + optional sequence. Requires the lessons:write scope.",
+        "course_id + optional sequence. Creators: visibility:'public' " +
+        "publishes the lesson to everyone who can view the source episode " +
+        "(e.g. followers of a collection it belongs to); it requires owning " +
+        "the episode and works for documents only. Requires the " +
+        "lessons:write scope.",
       inputSchema: {
         title: z
           .string()
@@ -950,6 +954,15 @@ export function registerTools(
           .describe(
             "Ordering position within the course (ties break by created_at). " +
               "Requires course_id.",
+          ),
+        visibility: z
+          .enum(["private", "public"])
+          .optional()
+          .describe(
+            "'private' (default, owner only) or 'public' (publish: visible " +
+              "to everyone who can view the source episode, e.g. via a " +
+              "public collection). Documents only, and only on an episode " +
+              "you own (403 publish_not_submission_owner otherwise).",
           ),
       },
     },

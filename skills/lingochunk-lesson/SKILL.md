@@ -89,7 +89,10 @@ the user to add the LingoChunk MCP server (see the plugin README) and stop.
    tab on the episode). If the user asked for a course or a series of lessons,
    file this one under a course: `create_course` once, then pass its id as
    `save_lesson`'s `course_id` with a `sequence` (see the `lingochunk-course`
-   guide). Offer `add_card` for drill words the lesson introduced (a 409 means
+   guide). If the user is a CREATOR publishing to their audience, pass
+   `visibility: "public"` too - the lesson then shows to everyone who can view
+   the episode (e.g. followers of their collection). Publishing requires
+   owning the episode; the default is private, so never publish unasked. Offer `add_card` for drill words the lesson introduced (a 409 means
    it is already there - skip and carry on; never add `status=known` words).
    Mention the in-app Download button if they want the offline HTML worksheet
    (it has no audio by design). Summarise what the lesson covers and which

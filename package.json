@@ -1,6 +1,6 @@
 {
   "name": "@lingochunk/mcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Model Context Protocol server for the LingoChunk public API: your FSRS-graded vocabulary, native-audio transcripts and clips, and library, as tools for a coding agent.",
   "license": "MIT",
   "private": false,

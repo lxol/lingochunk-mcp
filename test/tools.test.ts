@@ -712,6 +712,31 @@ describe("write tools", () => {
     });
   });
 
+  it("save_lesson forwards visibility so creators can publish", async () => {
+    mockFetch(
+      jsonResponse(
+        {
+          id: "l2",
+          title: "T",
+          language: "de",
+          size_bytes: 9,
+          source_submission_ids: [],
+          created_at: "2026-07-12T00:00:00Z",
+          visibility: "public",
+        },
+        201,
+      ),
+    );
+    await call("save_lesson", {
+      document: { format: "lesson.v1" },
+      visibility: "public",
+    });
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      document: { format: "lesson.v1" },
+      visibility: "public",
+    });
+  });
+
   it("list_lessons GETs /lessons with the paging params", async () => {
     mockFetch(jsonResponse({ lessons: [], next_cursor: null }));
     const result = await call("list_lessons", { limit: 2, cursor: "abc" });
