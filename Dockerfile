@@ -5,6 +5,11 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
+# The build's generate step (scripts/generate-guides.ts, run by `npm run
+# build` and by npm ci's `prepare`) embeds skills/*/SKILL.md into
+# src/generated/guides.ts — both trees must be in the build context.
+COPY scripts ./scripts
+COPY skills ./skills
 RUN npm ci && npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
