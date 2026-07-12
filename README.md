@@ -14,6 +14,12 @@ contributions (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 > Install: `/plugin marketplace add lingochunk/lingochunk-mcp` in Claude Code (server
 > plus lesson skills), or `npx -y @lingochunk/mcp` as a standalone MCP server.
 
+**A creator rather than a coder?** If you make audio (a podcast, a YouTube
+channel, classes) and want your episodes to become annotated transcripts,
+lessons, courses and multi-language study guides your audience can use, start
+with **[LingoChunk for creators](docs/creator-guide.md)** - no programming
+required, everything happens by talking to an AI assistant.
+
 ## What it gives an agent
 
 Twenty-nine tools. Twelve read from your account; sixteen write to it; one
@@ -34,7 +40,7 @@ that never see the skills still compose good lessons, cards and annotations.
 | `add_card` | `cards:write` | Adds a card to your review queue (FSRS, starts new). Preferred: the `card.v1` kinds (`word`, `phrase`, `collocation`, `idiom`, `chunk`, `grammar`, `cloze`, `contrast`, `qa`, `production`) anchored to a verbatim transcript sentence - the server derives the highlight/blur painting and native-audio clip, so the card matches the app's own. Legacy: `kind=vocab` from your vocabulary, or `kind=custom` front/back. Omit `deck_id` to use the deck for the card's own submission. |
 | `export_anki_deck` | `decks:export` | Exports a deck to Anki `.apkg` (no LLM), polling internally; returns a download URL when ready. A deck with no linked episode can't be exported. |
 | `validate_lesson` | `lessons:write` | Dry-run validates a `lesson.v1` document WITHOUT saving it, reporting EVERY problem at once (schema faults with a `loc`, reference faults with the same codes `save_lesson` raises) so you fix a document in one pass. Stores nothing; spends no lesson-cap budget. Call it before `save_lesson`. |
-| `save_lesson` | `lessons:write` | Saves a lesson to your private library (100 max). Preferred: a structured `lesson.v1` document the app renders natively (Lessons tab on the episode, real audio, live word state, Ask AI); returns metadata + an `app_url`. Legacy: a self-contained HTML file (10 MB cap) opened via a short-lived view URL. Optional `course_id` (+ `sequence`) files it under a course. |
+| `save_lesson` | `lessons:write` | Saves a lesson to your private library (100 max). Preferred: a structured `lesson.v1` document the app renders natively (Lessons tab on the episode, real audio, live word state, Ask AI); returns metadata + an `app_url`. Legacy: a self-contained HTML file (10 MB cap) opened via a short-lived view URL. Optional `course_id` (+ `sequence`) files it under a course. Creators: `visibility:'public'` publishes the lesson to everyone who can view the source episode (documents only, own episodes only). |
 | `list_lessons` | `lessons:write` | Your saved lessons, newest first (id, title, language, format, source episode, and `course_id`/`sequence`/`course_title` when filed under a course), cursor-paginated - for finding ids and seeing what already exists. |
 | `get_lesson` | `lessons:write` | Reads back a saved `lesson.v1` document by id. Closes the revision loop: lessons are immutable, so revise = read -> save new -> delete old. |
 | `delete_lesson` | `lessons:write` | Permanently deletes one saved lesson by id (destructive; owner-scoped server-side). Mainly for iterating: re-saving creates a new lesson, so superseded drafts count against the 100-lesson cap. |
@@ -135,28 +141,31 @@ claude mcp add lingochunk --env LINGOCHUNK_TOKEN=lcp_... -- node /absolute/path/
 
 The same server also runs hosted at `https://lingochunk.com/mcp` as a
 standard **remote MCP server** (Streamable HTTP). Nothing to install - paste
-the URL into any client that supports custom remote MCP servers, and
-authenticate with a personal access token (LingoChunk -> Settings -> API
-tokens) sent as a Bearer credential:
+the URL into any client that supports custom remote MCP servers and **sign in
+with your LingoChunk account when the client prompts you** (OAuth 2.1 with a
+consent screen; the grant appears in Settings -> API tokens, revocable like
+any token). Clients with a token field can instead send a personal access
+token as a Bearer credential:
 
 | Client | Where |
 |---|---|
-| claude.ai (web/desktop/mobile, incl. Free) | Settings -> Connectors -> *Add custom connector* -> URL `https://lingochunk.com/mcp/t/lcp_...` (your token IN the URL - claude.ai has no token field and OAuth sign-in is not built yet; leave the OAuth fields empty) |
-| Claude Code | `claude mcp add --transport http lingochunk https://lingochunk.com/mcp --header "Authorization: Bearer lcp_..."` |
-| ChatGPT (paid plans) | Settings -> enable *Developer mode* -> Apps -> "+" -> URL + your token |
+| claude.ai (web/desktop/mobile, incl. Free) | Settings -> Connectors -> *Add custom connector* -> URL `https://lingochunk.com/mcp` -> a LingoChunk sign-in/consent screen opens; approve and you are connected |
+| Claude Code | `claude mcp add --transport http lingochunk https://lingochunk.com/mcp` (OAuth on first use), or pass `--header "Authorization: Bearer lcp_..."` to use a token instead |
+| ChatGPT (paid plans) | Settings -> enable *Developer mode* -> Apps -> "+" -> URL (OAuth), or URL + your token |
 | Mistral Le Chat | *+ Add Connector* -> Custom MCP Connector -> URL (auth auto-detected) |
-| Perplexity (Pro/Max), Grok, Manus | add a custom connector/MCP server by URL + API key |
+| Perplexity (Pro/Max), Grok, Manus | add a custom connector/MCP server by URL, sign in or paste an API key |
 
 Differences from the local server: `get_audio_clip` is unavailable (it writes
 files, which only makes sense on your own machine - use `get_audio_url`), and
-skills don't auto-load (paste a skill's `SKILL.md` as context instead).
+skills don't auto-load (the server exposes each skill as an MCP **prompt**,
+and agents can pull the same guidance through the `get_authoring_guide` tool).
 
-**If your client has no token field** (claude.ai custom connectors accept only
-OAuth or nothing), embed the token in the URL: `https://lingochunk.com/mcp/t/lcp_...`.
-That URL then IS a credential - treat it like a password, prefer a token with
-only the scopes you need, and revoke it in Settings if it ever leaks. A header,
-when your client supports one, is always preferred (URLs end up in access logs;
-headers don't). Proper OAuth sign-in is planned and will supersede this.
+**If your client offers neither OAuth nor a token field**, embed the token in
+the URL: `https://lingochunk.com/mcp/t/lcp_...`. That URL then IS a
+credential - treat it like a password, prefer a token with only the scopes you
+need, and revoke it in Settings if it ever leaks. OAuth sign-in or a header,
+when your client supports one, is always preferred (URLs end up in access
+logs).
 
 ## Use with other agents
 
@@ -306,6 +315,7 @@ skills/lingochunk-discuss/              the "discuss an episode" skill
 skills/lingochunk-add-language/         the add-language / draft-translation skill
 skills/lingochunk-annotate/             the useful-expression annotation skill
 skills/*/examples/                      example lesson.v1 documents (CI-validated)
+docs/creator-guide.md                   the guide for content creators (start here if you make audio)
 docs/skill-authoring.md                 how to write a new skill
 docs/skill-template.md                  SKILL.md starting point
 docs/integrations/fluent.md             how to plug this into the fluent tutor plugin
