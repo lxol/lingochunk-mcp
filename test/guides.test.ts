@@ -16,10 +16,11 @@ const TOPICS: GuideTopic[] = [
   "annotations",
   "add-language",
   "discuss",
+  "skill-author",
 ];
 
 describe("embedded authoring guides", () => {
-  it("embeds all seven topics", () => {
+  it("embeds all eight topics", () => {
     expect([...GUIDE_TOPICS].sort()).toEqual([...TOPICS].sort());
     expect(GUIDE_SOURCES.map((s) => s.topic).sort()).toEqual(
       [...TOPICS].sort(),

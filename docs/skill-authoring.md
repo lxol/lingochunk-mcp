@@ -35,7 +35,10 @@ bytes, never stores knowledge state, and never renders anything.
 The tools (each wraps one public endpoint; full table in the
 [README](../README.md)): `list_library`, `get_transcript`, `get_vocabulary`,
 `lookup_word`, `search_examples`, `get_audio_url` for reading;
-`save_lesson`, `add_card`, `list_decks`, `export_anki_deck` for writing.
+`validate_lesson` (dry-run: every schema + reference error at once),
+`save_lesson`, `update_lesson`, `add_card`, `list_decks`,
+`export_anki_deck` for writing. Always `validate_lesson` before the first
+save - it turns the save -> 400 -> fix loop into one pass.
 
 ## The lesson.v1 document
 
@@ -56,12 +59,16 @@ The block vocabulary - the complete set of things a lesson can contain:
 | `exercise_mcq` | multiple choice, optionally with an audio window (listening) |
 | `exercise_gap_fill` | `{{n}}` gaps with per-gap accepted answers, optional word bank |
 | `exercise_match` | match pairs |
+| `exercise_order` | reorder scrambled chunks into the anchored sentence (Satzbau) |
+| `exercise_dictation` | listen to the anchored sentence and type it; live word diff |
+| `exercise_shadow` | listen -> record -> replay loop on anchored sentences |
 | `exercise_production` | free writing prompt with a blurred model answer |
 | `review` | closing block: can-do statements, add-to-deck word offers |
 
 Caps that matter while composing: 40 blocks per document, 30 dialogue
 lines, 20 vocab entries, 5 MCQ options, 10 gap-fill items, 8 match pairs,
-1 MB serialized. Per account: 100 active lessons, 60 saves/hour.
+5 order items, 5 dictation items, 8 shadow items, 1 MB serialized. Per
+account: 100 active lessons, 60 saves/hour.
 
 ### What the server checks that a schema cannot
 

@@ -113,7 +113,7 @@ describe("hosted HTTP server", () => {
     }
   });
 
-  it("advertises the prompts capability and lists all six authoring prompts", async () => {
+  it("advertises the prompts capability and lists every authoring prompt", async () => {
     const client = await mcpClient("lcp_alpha");
     try {
       // The capability must be in the initialize result, or OAuth clients
@@ -130,6 +130,7 @@ describe("hosted HTTP server", () => {
           "lingochunk-discuss",
           "lingochunk-lesson",
           "lingochunk-overview",
+          "lingochunk-skill-author",
         ].sort(),
       );
       // Descriptions come from the skill frontmatter, not empty.

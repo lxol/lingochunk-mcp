@@ -62,7 +62,7 @@ compose good lessons, cards and annotations.
 | `update_annotation` | `annotations:write` | Replaces one annotation's note in place (the anchor stays put). |
 | `delete_annotation` | `annotations:write` | Deletes one annotation (destructive); also how you fix a mis-anchored span before re-creating it. |
 
-Plus seven skills:
+Plus eight skills:
 
 - **`lingochunk-overview`** - the "what can I do?" tour: a short menu of
   every area (with an example prompt each) and instructions to answer
@@ -91,6 +91,11 @@ Plus seven skills:
   culture-bound references) and attaches a short markdown creator note to each
   exact span: an iris tint + note sheet for you, a forward-only note card for
   your followers.
+- **`lingochunk-skill-author`** - the meta-skill: generalises a lesson you
+  have refined (say, through the app's Co-edit mode) into a NEW reusable
+  skill - structure and voice kept, episode content replaced by
+  fetch-and-quote instructions - which you keep private in your own AI's
+  context or contribute here as a PR (see CONTRIBUTING).
 
 The Claude Code plugin installs these as skills. Every client also gets the
 same guidance two other ways that need no plugin: as MCP **prompts** (one per
@@ -322,6 +327,7 @@ skills/lingochunk-cards/                the flashcard (card.v1) skill
 skills/lingochunk-discuss/              the "discuss an episode" skill
 skills/lingochunk-add-language/         the add-language / draft-translation skill
 skills/lingochunk-annotate/             the useful-expression annotation skill
+skills/lingochunk-skill-author/         the meta-skill: lesson -> reusable skill
 skills/*/examples/                      example lesson.v1 documents (CI-validated)
 docs/creator-guide.md                   the guide for content creators (start here if you make audio)
 docs/skill-authoring.md                 how to write a new skill

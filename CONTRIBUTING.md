@@ -82,6 +82,33 @@ works:
 4. Run the skill live on your own account and feed the server's error codes
    back to the agent until the lesson saves and plays well.
 
+### The chat-first path (no checkout needed)
+
+You can get all the way to a PR-ready skill without cloning anything. Build
+a lesson with your connected agent, refine it in the app's Co-edit mode
+until the format is exactly right, then ask the agent to "make a skill from
+this lesson" - the `lingochunk-skill-author` guide (an MCP prompt, also
+served by `get_authoring_guide`) walks it through generalising the lesson
+into a portable `SKILL.md`: structure and voice kept, episode content
+replaced by fetch-and-quote instructions, round-trip-checked against the
+origin episode.
+
+Keep the result private (a claude.ai Project, a Claude Code skills dir -
+the skill is plain text and works on any MCP client), or bring it here as a
+PR following "Contributing a skill" above. Publication is the only step
+that needs this repo.
+
+### Skill naming
+
+The `lingochunk-` name prefix is **reserved for skills merged into this
+repo** (directories here are `skills/lingochunk-<name>/`, and the served
+guide prompts are named `lingochunk-<skill>`). Name a private skill after
+yourself or the format instead - `daves-family-phrases`,
+`weekly-shadowing-drill` - and stamp lessons with that slug via
+`generator: {skill: "<name>", version: "..."}` so the app's lessons list
+shows which format (and which iteration of it) built each lesson. If your
+skill is later merged, it takes the `lingochunk-` prefix in the PR.
+
 ## What gets a skill PR merged
 
 - **Grounded.** The skill quotes transcripts by position, takes meanings

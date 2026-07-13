@@ -21,6 +21,7 @@ export const GUIDE_SOURCES: { topic: string; skill: string }[] = [
   { topic: "annotations", skill: "lingochunk-annotate" },
   { topic: "add-language", skill: "lingochunk-add-language" },
   { topic: "discuss", skill: "lingochunk-discuss" },
+  { topic: "skill-author", skill: "lingochunk-skill-author" },
 ];
 
 interface ParsedSkill {

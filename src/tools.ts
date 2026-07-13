@@ -540,8 +540,10 @@ export function registerTools(
         "multi-lesson course ('course', before create_course), flashcards " +
         "('cards', before add_card), creator notes ('annotations', before " +
         "create_annotation), a translation / added language ('add-language', " +
-        "before add_language or the draft flow), or a guided discussion " +
-        "('discuss'). Topic 'overview' is the what-can-I-do tour (same " +
+        "before add_language or the draft flow), a guided discussion " +
+        "('discuss'), or a reusable skill generalised from a finished " +
+        "lesson ('skill-author', when the user wants to save or share a " +
+        "lesson FORMAT). Topic 'overview' is the what-can-I-do tour (same " +
         "content as whats_possible). Returns the guide markdown: anchoring " +
         "rules, the block/kind menu, and worked recipes. Read-only; needs " +
         "no scope.",
@@ -553,7 +555,8 @@ export function registerTools(
               "(a multi-lesson series), 'cards' (card.v1 flashcards), " +
               "'annotations' (creator notes), 'add-language' (translations / " +
               "leveled same-language decks), 'discuss' (guided episode " +
-              "discussion) or 'overview' (the what-can-I-do tour).",
+              "discussion), 'skill-author' (turn a finished lesson into a " +
+              "reusable skill) or 'overview' (the what-can-I-do tour).",
           ),
       },
     },
