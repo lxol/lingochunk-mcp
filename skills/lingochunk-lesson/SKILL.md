@@ -92,8 +92,12 @@ the user to add the LingoChunk MCP server (see the plugin README) and stop.
    guide). If the user is a CREATOR publishing to their audience, pass
    `visibility: "public"` too - the lesson then shows to everyone who can view
    the episode (e.g. followers of their collection). Publishing requires
-   owning the episode; the default is private, so never publish unasked. Offer `add_card` for drill words the lesson introduced (a 409 means
-   it is already there - skip and carry on; never add `status=known` words).
+   owning the episode; the default is private, so never publish unasked. Tell the user every vocab row and review-offer chip has an
+   add-to-deck button - one tap saves your gloss as forward+reverse cards
+   with the sentence audio, so they curate their own deck while studying.
+   Offer `add_card` only when they ask you to add words FOR them (a 409
+   means it is already there - skip and carry on; never add `status=known`
+   words).
    Mention the in-app Download button if they want the offline HTML worksheet
    (it has no audio by design). Summarise what the lesson covers and which
    words it drills.
@@ -146,6 +150,16 @@ that omits them renders flat. These are hard rules, not suggestions:
 - **Every `vocab` entry MUST carry `position`.** The anchor is what puts an
   audio play chip on the row and a crosslink to the Words tab. A vocab entry
   with no position is a dead row.
+- **Write `meaning` as a flashcard face.** The app has an add-to-deck button
+  on every vocab row (and on the review block's word chips): one tap turns
+  the entry into forward+reverse cards whose meaning face is YOUR `meaning`,
+  verbatim, with audio from the anchor sentence - no server AI involved.
+  Keep it a concise, self-contained gloss (what the learner should recall),
+  not a lecture; register/usage notes belong in a `prose` block.
+- **`review.new_lemmas` should only list lemmas the lesson's `vocab` entries
+  gloss.** Each chip in the closing offer adds a card built from that
+  entry's meaning; a lemma with no entry falls back to a server-side AI
+  resolve - spending budget to derive what you could have authored.
 - **Every MCQ that tests LISTENING MUST carry `audio`** (and a `position`
   when it points at one sentence). Without `audio` it is a reading question,
   not a listening one. A pure recognition/gist MCQ before reading is the one
