@@ -60,13 +60,19 @@ habits disagree, the brief wins.
    internal writer's two repair rounds. Ground every quote in the brief's
    sentences; do not invent lines or reach outside the section.
 
-5. **Check, then submit.** Validate your document against the contract - run
-   `validate_lesson(document)` to catch every schema and reference fault at
-   once - then `submit_guided_lesson(submission_id, section_index, document,
-   generator)`. Pass the `section_index` the brief gave you, and name your skill
-   in `generator` (e.g. `{skill: "lingochunk-guided", version: "..."}`) for
-   provenance. A successful submit attaches the lesson to the section and counts
-   one part against the user's daily guided budget.
+5. **Check, then submit.** Review your document against the contract, then
+   `submit_guided_lesson(submission_id, section_index, document, generator)`.
+   Submit is the validator of record and reports every problem at once,
+   including the section-boundary checks only it can run. An optional
+   pre-check with `validate_lesson(document)` catches schema and
+   declared-slice faults early, but needs the separate `lessons:write` scope
+   and cannot see the section frame - skip it if the token lacks that scope.
+   Pass the `section_index` the brief gave you, and name your skill in
+   `generator` (e.g. `{skill: "lingochunk-guided", version: "..."}`) for
+   provenance. A successful submit attaches the lesson to the section and
+   counts one part against the user's daily guided budget. The response's
+   `unknown_lemmas` is ADVISORY: the lesson saved; those lemmas simply lose
+   their Words-tab crosslink (fix and update later if you care).
 
 6. **Repeat** from step 2 until `get_guided_path` shows every section written.
 
@@ -76,6 +82,8 @@ habits disagree, the brief wins.
 - `guided:write` - `plan_guided_path`, `get_guided_writer_brief`,
   `submit_guided_lesson`. The brief sits under the WRITE scope because it
   carries the writing instructions; only a caller intending to write needs it.
+- `lessons:write` - only needed for the OPTIONAL `validate_lesson` pre-check
+  in step 5; submit itself never requires it.
 
 If a tool answers 403 naming a scope, tell the user to reconnect (or mint a
 token with that scope) via LingoChunk -> Settings -> API tokens.

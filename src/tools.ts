@@ -2064,12 +2064,18 @@ export function registerTools(
           .object({
             skill: z
               .string()
-              .max(100)
+              .regex(
+                /^[a-z0-9][a-z0-9._-]{0,79}$/,
+                "lowercase slug, e.g. lingochunk-guided",
+              )
               .optional()
               .describe("The skill that wrote this lesson (name YOUR skill)."),
             version: z
               .string()
-              .max(50)
+              .regex(
+                /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/,
+                "short version slug, e.g. 1.0.0",
+              )
               .optional()
               .describe("Optional version of that skill."),
           })

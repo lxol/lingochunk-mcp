@@ -115,7 +115,7 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tool registration", () => {
-  it("registers all thirty-four tools", () => {
+  it("registers all thirty-five tools", () => {
     expect([...tools.keys()].sort()).toEqual(
       [
         "add_card",
@@ -1826,7 +1826,7 @@ describe("guided writer tools", () => {
               {
                 code: "missing_field",
                 message: "Field is required.",
-                loc: ["blocks", 0, "kind"],
+                loc: "blocks.0.kind",
               },
             ],
             unknown_lemmas: [],

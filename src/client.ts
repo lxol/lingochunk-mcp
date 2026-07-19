@@ -234,6 +234,16 @@ export function formatDetail(detail: unknown): string | undefined {
         .filter((l): l is string => l !== undefined)
         .map((l) => `- ${l}`);
       if (lines.length) {
+        // unknown_lemmas rides the 422 too and is ADVISORY - surface it so the
+        // agent never mistakes the list for a failure it must fix.
+        const lemmas = (detail as { unknown_lemmas?: unknown }).unknown_lemmas;
+        if (Array.isArray(lemmas) && lemmas.length) {
+          lines.push(
+            `(advisory, not an error: unknown lemmas ${lemmas
+              .filter((l): l is string => typeof l === "string")
+              .join(", ")} - these just lose their Words-tab crosslink)`,
+          );
+        }
         return [header || "The document is invalid.", ...lines].join("\n");
       }
     }
@@ -291,7 +301,11 @@ function formatDocumentError(item: unknown): string | undefined {
   const code = typeof rec.code === "string" ? rec.code : undefined;
   const message = typeof rec.message === "string" ? rec.message : undefined;
   const locators: string[] = [];
-  if (Array.isArray(rec.loc)) {
+  // The server emits loc as a dotted STRING (api model: loc: str|null); the
+  // array branch is kept for forward tolerance of FastAPI-style locs.
+  if (typeof rec.loc === "string" && rec.loc) {
+    locators.push(rec.loc);
+  } else if (Array.isArray(rec.loc)) {
     const loc = rec.loc
       .filter((p) => typeof p === "string" || typeof p === "number")
       .join(".");
