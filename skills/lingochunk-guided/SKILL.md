@@ -119,7 +119,12 @@ code:
 - **413 `document_too_large`**: shorten the document and resubmit.
 - **422 `invalid_document`**: the response lists EVERY problem at once (the same
   philosophy as `validate_lesson`). Read the whole `errors` list, fix them all
-  in one pass, and resubmit - do not fix one and resubmit repeatedly.
+  in one pass, and resubmit - do not fix one and resubmit repeatedly. Among the
+  error codes: `position_outside_section` / `audio_outside_section` mean you
+  reached beyond the brief's section (audio windows must sit INSIDE the
+  section's time range), and `language_mismatch` /
+  `translation_language_mismatch` mean the document's languages must equal the
+  brief's `materials.language` / `materials.translation_language` verbatim.
 - **429 `guided_daily_limit`**: the daily guided budget is spent; try again the
   next day.
 
