@@ -115,7 +115,7 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tool registration", () => {
-  it("registers all thirty-nine tools", () => {
+  it("registers all forty tools", () => {
     expect([...tools.keys()].sort()).toEqual(
       [
         "add_card",
@@ -147,7 +147,8 @@ describe("tool registration", () => {
         "list_library",
         "lookup_word",
         "plan_guided_path",
-        "put_guided_translation",
+        "put_guided_plan_translation",
+        "put_guided_section_translation",
         "put_language_translations",
         "put_lesson_translation",
         "save_lesson",
@@ -1368,7 +1369,7 @@ describe("language tools", () => {
     });
   });
 
-  it("put_guided_translation routes plan vs section modes", async () => {
+  it("put_guided_plan_translation PUTs plan units with the plan version", async () => {
     mockFetch(
       jsonResponse({
         language: "fr",
@@ -1376,47 +1377,40 @@ describe("language tools", () => {
         section_count: 3,
       }),
     );
-    await call("put_guided_translation", {
+    await call("put_guided_plan_translation", {
       submission_id: "s1",
       language: "fr",
+      base_version: "2026-07-22T00:00:00+00:00",
       units: [{ path: "sections.0.title", text: "FR Salutations" }],
     });
     expect(lastUrl).toBe(
       "https://api.test/api/v1/submissions/s1/guided/translations/fr",
     );
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      base_version: "2026-07-22T00:00:00+00:00",
+      units: [{ path: "sections.0.title", text: "FR Salutations" }],
+    });
+  });
 
+  it("put_guided_section_translation PUTs to the section endpoint", async () => {
     mockFetch(
       jsonResponse({
         lesson_id: "ed-2",
-        section_index: 0,
+        section_index: 2,
         language: "fr",
         unknown_lemmas: [],
       }),
     );
-    await call("put_guided_translation", {
+    await call("put_guided_section_translation", {
       submission_id: "s1",
+      section_index: 2,
       language: "fr",
-      section_index: 0,
       base_version: "2026-07-22T00:00:00+00:00",
       units: [{ path: "title", text: "FR Section" }],
     });
     expect(lastUrl).toBe(
-      "https://api.test/api/v1/submissions/s1/guided/sections/0/translations/fr",
+      "https://api.test/api/v1/submissions/s1/guided/sections/2/translations/fr",
     );
-  });
-
-  it("put_guided_translation with section_index but no base_version errors locally", async () => {
-    const spy = vi.fn();
-    vi.stubGlobal("fetch", spy);
-    const result = await call("put_guided_translation", {
-      submission_id: "s1",
-      language: "fr",
-      section_index: 0,
-      units: [{ path: "title", text: "FR Section" }],
-    });
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain("base_version");
-    expect(spy).not.toHaveBeenCalled();
   });
 
   it("discard_language_draft DELETEs the draft and returns the count", async () => {

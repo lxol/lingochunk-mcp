@@ -218,12 +218,15 @@ Flow for one lesson:
    retry once. On 409 `stale_document`, the master changed: re-fetch the
    source and re-translate what moved.
 
-Flow for a guided path: `get_guided_translation_source` first; PUT the plan
-units (no `section_index`), then translate each section's
-`master_lesson_id` through steps 1-3 above but submit with
-`put_guided_translation(..., section_index=N, base_version=<that lesson's
-version>)`. Sections go in any order; a section already translated is
-improved via `update_lesson`, never re-submitted.
+Flow for a guided path: `get_guided_translation_source` first;
+`put_guided_plan_translation` with the plan units and the source's
+`plan_version` as `base_version` (once, before any section); then translate
+each section's `master_lesson_id` through steps 1-3 above and submit with
+`put_guided_section_translation(section_index=<the section's index FIELD>,
+base_version=<that lesson's version>)`. Pair plan units with sections by
+each section's `unit_path_prefix`, never by its `index` (they can differ).
+Sections go in any order; a section already translated is improved via
+`update_lesson`, never re-submitted.
 
 ### Translation rules (the render/adapt contract)
 
@@ -255,3 +258,15 @@ Editions keep their lineage (`parent_lesson_id`), so re-running a
 translation REPLACES an unedited machine edition in place (progress
 survives); a hand-edited edition is protected (`translated_copy_edited`) -
 improve it with `update_lesson` instead.
+
+Two more rules of the road:
+
+- **A public master publishes its edition IMMEDIATELY.** Standalone
+  editions inherit the master's visibility, so translating a public lesson
+  puts the machine translation in front of collection viewers with no
+  review step. Say so before running it; offer to review the units first
+  or suggest unpublishing during translation.
+- **Guided parts are guided-only.** `put_lesson_translation` on a lesson
+  that belongs to a guided path 409s (`guided_part`); use the section flow.
+  Everything here is owner-only: episodes you merely view in a shared
+  collection cannot be translated.

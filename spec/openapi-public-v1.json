@@ -3488,6 +3488,7 @@
           "public-v1"
         ],
         "summary": "Everything needed to translate a lesson into one language",
+        "description": "The meta-language strings of one owned lesson.v1 lesson as\npath-addressed units, plus the sibling/edition state for the requested\nlanguage and the version token the PUT must echo as ``base_version``.\nTarget-language text is never a unit.\n\n**Requires scope:** `translations:write`",
         "operationId": "get_lesson_translation_source_api_v1_lessons__lesson_id__translation_source_get",
         "parameters": [
           {
@@ -3603,8 +3604,7 @@
         },
         "x-required-scopes": [
           "translations:write"
-        ],
-        "description": "\n\n**Requires scope:** `translations:write`"
+        ]
       }
     },
     "/api/v1/lessons/{lesson_id}/translations/{language}": {
@@ -3613,6 +3613,7 @@
           "public-v1"
         ],
         "summary": "Create or machine-replace the lesson's edition on the sibling",
+        "description": "Create (or machine-replace) the edition of an owned lesson on the\ntarget language's sibling submission, in one request. The unit map must\ncover the translation source exactly; ``base_version`` must match the\nmaster's current version token. The edition inherits the master's\nvisibility (a public master mints a public edition immediately). A\nhand-edited edition is never overwritten (409 translated_copy_edited);\nguided parts must use the guided section flow (409 guided_part).\n\n**Requires scope:** `translations:write`",
         "operationId": "put_lesson_translation_api_v1_lessons__lesson_id__translations__language__put",
         "parameters": [
           {
@@ -3736,8 +3737,7 @@
         },
         "x-required-scopes": [
           "translations:write"
-        ],
-        "description": "\n\n**Requires scope:** `translations:write`"
+        ]
       }
     },
     "/api/v1/submissions/{submission_id}/guided/translation-source": {
@@ -3746,6 +3746,7 @@
           "public-v1"
         ],
         "summary": "Everything needed to translate a guided path into one language",
+        "description": "The guided plan's meta text as units, per-section master/sibling\nstate, and the plan version token the plan PUT must echo. Section\ndocuments ride the per-lesson translation source (each section names its\nmaster_lesson_id).\n\n**Requires scope:** `translations:write`",
         "operationId": "get_guided_translation_source_api_v1_submissions__submission_id__guided_translation_source_get",
         "parameters": [
           {
@@ -3861,8 +3862,7 @@
         },
         "x-required-scopes": [
           "translations:write"
-        ],
-        "description": "\n\n**Requires scope:** `translations:write`"
+        ]
       }
     },
     "/api/v1/submissions/{submission_id}/guided/translations/{language}": {
@@ -3871,6 +3871,7 @@
           "public-v1"
         ],
         "summary": "Mint the sibling's guided plan from the master's, translated",
+        "description": "Mint the sibling submission's guided plan from the owned master's:\nstructure copied verbatim, meta text translated, section lesson links\ncleared, status ready. Never overwrites an existing sibling plan (409\nsibling_plan_exists); ``base_version`` must match the master plan's\nversion token (409 stale_plan after a replan).\n\n**Requires scope:** `translations:write`",
         "operationId": "put_guided_plan_translation_api_v1_submissions__submission_id__guided_translations__language__put",
         "parameters": [
           {
@@ -3994,8 +3995,7 @@
         },
         "x-required-scopes": [
           "translations:write"
-        ],
-        "description": "\n\n**Requires scope:** `translations:write`"
+        ]
       }
     },
     "/api/v1/submissions/{submission_id}/guided/sections/{index}/translations/{language}": {
@@ -4004,6 +4004,7 @@
           "public-v1"
         ],
         "summary": "Attach the translated edition of one guided part to the sibling",
+        "description": "Attach the translated edition of one master guided part to the same\nsection of the sibling's plan (any order; the plan must be translated\nfirst). ``base_version`` is the MASTER part's version token. The edition\nis written through the same save path as the writer (private, in the\nsibling's Guided path course, sequenced by study position) under the\nsibling plan's writer claim so concurrent generation cannot\ndouble-write.\n\n**Requires scope:** `translations:write`",
         "operationId": "put_guided_section_translation_api_v1_submissions__submission_id__guided_sections__index__translations__language__put",
         "parameters": [
           {
@@ -4136,8 +4137,7 @@
         },
         "x-required-scopes": [
           "translations:write"
-        ],
-        "description": "\n\n**Requires scope:** `translations:write`"
+        ]
       }
     },
     "/api/v1/submissions/{submission_id}/annotations": {
@@ -8133,6 +8133,12 @@
       },
       "GuidedPlanTranslationPutRequest": {
         "properties": {
+          "base_version": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Base Version",
+            "description": "The master plan's version token from the translation source; a mismatch means the path was re-planned (409)"
+          },
           "units": {
             "items": {
               "$ref": "#/components/schemas/TranslationUnitPutV1"
@@ -8146,6 +8152,7 @@
         },
         "type": "object",
         "required": [
+          "base_version",
           "units"
         ],
         "title": "GuidedPlanTranslationPutRequest",
@@ -8394,7 +8401,12 @@
           "index": {
             "type": "integer",
             "title": "Index",
-            "description": "Plan index"
+            "description": "The section's plan index (use this for the section translation PUT)"
+          },
+          "unit_path_prefix": {
+            "type": "string",
+            "title": "Unit Path Prefix",
+            "description": "The path prefix of this section's plan units (e.g. 'sections.2'); pair units with sections by THIS, not by index"
           },
           "skip": {
             "type": "boolean",
@@ -8434,11 +8446,12 @@
         "type": "object",
         "required": [
           "index",
+          "unit_path_prefix",
           "skip",
           "title"
         ],
         "title": "GuidedTranslationSectionV1",
-        "description": "One plan section's translation state."
+        "description": "One plan section's translation state.\n\n``index`` is the section's plan-index FIELD (what the section PUT takes);\n``unit_path_prefix`` is the ARRAY position the plan units use. They\nnormally coincide but only the prefix addresses units - never derive one\nfrom the other."
       },
       "GuidedTranslationSourceV1": {
         "properties": {
@@ -8489,6 +8502,11 @@
             "title": "Sibling Plan Exists",
             "description": "Whether the sibling already has a guided plan (translated or generated); the plan PUT refuses to overwrite one"
           },
+          "plan_version": {
+            "type": "string",
+            "title": "Plan Version",
+            "description": "The master plan's version token; echo verbatim as the plan PUT's base_version (a replan invalidates extracted units)"
+          },
           "plan_units": {
             "items": {
               "$ref": "#/components/schemas/TranslationUnitV1"
@@ -8513,6 +8531,7 @@
           "target_language",
           "sibling_exists",
           "sibling_plan_exists",
+          "plan_version",
           "plan_units",
           "sections"
         ],
@@ -9341,7 +9360,7 @@
           "units"
         ],
         "title": "LessonTranslationPutRequest",
-        "description": "Create (or machine-replace) the edition of a lesson on the target\nlanguage's sibling submission, in one request."
+        "description": "Create (or machine-replace) the edition of a lesson on the target\nlanguage's sibling submission, in one request.\n\nThe edition inherits the master's visibility: a PUBLIC master mints a\npublic edition that collection viewers see IMMEDIATELY - review the\ntranslation before running this, or unpublish the master first."
       },
       "LessonTranslationResultV1": {
         "properties": {

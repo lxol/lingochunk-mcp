@@ -1755,11 +1755,16 @@ export function registerTools(
     path: z
       .string()
       .min(1)
+      .max(200)
       .describe("The unit path exactly as served by the translation source."),
     text: z
       .string()
       .min(1)
-      .describe("Your translated (or passed-through) text for this unit."),
+      .max(4000)
+      .describe(
+        "Your translated (or passed-through) text for this unit (respect " +
+          "the unit's own max_length; 4000 is the transport cap).",
+      ),
   });
 
   const translatorGenerator = z
@@ -1895,23 +1900,20 @@ export function registerTools(
   );
 
   server.registerTool(
-    "put_guided_translation",
+    "put_guided_plan_translation",
     {
-      title: "Save a guided path translation (plan or one section)",
+      title: "Mint the sibling's translated guided plan",
       description:
-        "Two modes on the MASTER submission id. WITHOUT section_index: mint " +
-        "the sibling's guided plan from the master's (send the plan units " +
-        "from get_guided_translation_source; structure is copied verbatim, " +
-        "section lesson links cleared; 409 sibling_plan_exists if the " +
-        "sibling already has any plan - never overwritten). WITH " +
-        "section_index: attach the translated edition of that section's " +
-        "master part (send the units of THAT LESSON from " +
-        "get_lesson_translation_source plus its 'version' as base_version); " +
-        "sections go in any order but the plan must exist first (409 " +
-        "sibling_plan_missing). 409 section_already_translated: improve the " +
-        "existing part via update_lesson instead. The edition lands private " +
-        "in the sibling's own Guided path course, exactly like the writer's " +
-        "parts. Requires the translations:write scope.",
+        "Mint the sibling submission's guided plan from the MASTER's: send " +
+        "every plan unit from get_guided_translation_source plus its " +
+        "'plan_version' as base_version. Structure (positions, study order, " +
+        "focus, minutes) is copied verbatim server-side; section lesson " +
+        "links start empty. Do this ONCE, before any section translation. " +
+        "409s: stale_plan (the master was re-planned - re-fetch the " +
+        "source), sibling_plan_exists (the sibling already has a plan, " +
+        "translated or generated - never overwritten), " +
+        "no_sibling_language, sibling_not_ready, sibling_transcript_drift. " +
+        "Requires the translations:write scope.",
       inputSchema: {
         submission_id: z.string().min(1).describe("The MASTER submission id."),
         language: z
@@ -1919,20 +1921,62 @@ export function registerTools(
           .min(2)
           .transform((v) => v.trim().toLowerCase())
           .describe("The edition language."),
+        base_version: z
+          .string()
+          .min(1)
+          .describe(
+            "The 'plan_version' from get_guided_translation_source, echoed " +
+              "verbatim.",
+          ),
+        units: z
+          .array(translationUnitPut)
+          .min(1)
+          .max(2000)
+          .describe("The translated plan units; exactly the source's paths."),
+      },
+    },
+    async ({ submission_id, language, base_version, units }) =>
+      runJson(() =>
+        client.putGuidedPlanTranslation(submission_id, language, {
+          base_version,
+          units,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "put_guided_section_translation",
+    {
+      title: "Attach one translated guided part to the sibling",
+      description:
+        "Attach the translated edition of ONE master guided part to the " +
+        "same section of the sibling's plan. Send the units of THAT " +
+        "LESSON's get_lesson_translation_source plus its 'version' as " +
+        "base_version, and the section's 'index' FIELD from " +
+        "get_guided_translation_source (pair units with sections by " +
+        "unit_path_prefix, never by index). Sections go in any order, but " +
+        "put_guided_plan_translation must have run first (409 " +
+        "sibling_plan_missing). 409 section_already_translated: improve " +
+        "the existing part via update_lesson instead. The edition lands " +
+        "private in the sibling's own Guided path course, sequenced by " +
+        "study position. Requires the translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The MASTER submission id."),
         section_index: z
           .number()
           .int()
           .min(0)
-          .optional()
-          .describe(
-            "Omit to translate the PLAN; set to attach one section's part.",
-          ),
+          .describe("The section's plan 'index' field."),
+        language: z
+          .string()
+          .min(2)
+          .transform((v) => v.trim().toLowerCase())
+          .describe("The edition language."),
         base_version: z
           .string()
           .min(1)
-          .optional()
           .describe(
-            "REQUIRED with section_index: the master part's 'version' from " +
+            "The MASTER part's 'version' from " +
               "get_lesson_translation_source, echoed verbatim.",
           ),
         generator: translatorGenerator,
@@ -1940,44 +1984,24 @@ export function registerTools(
           .array(translationUnitPut)
           .min(1)
           .max(2000)
-          .describe("The translated units for the chosen mode."),
+          .describe("The translated units of the master part's document."),
       },
     },
     async ({
       submission_id,
-      language,
       section_index,
+      language,
       base_version,
       generator,
       units,
-    }) => {
-      if (section_index === undefined) {
-        return runJson(() =>
-          client.putGuidedPlanTranslation(submission_id, language, { units }),
-        );
-      }
-      if (!base_version) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text:
-                "section_index needs base_version: the master part's " +
-                "'version' from get_lesson_translation_source.",
-            },
-          ],
-          isError: true,
-        };
-      }
-      return runJson(() =>
-        client.putGuidedSectionTranslation(
-          submission_id,
-          section_index,
-          language,
-          { base_version, generator, units },
-        ),
-      );
-    },
+    }) =>
+      runJson(() =>
+        client.putGuidedSectionTranslation(submission_id, section_index, language, {
+          base_version,
+          generator,
+          units,
+        }),
+      ),
   );
 
   // --- Creator annotation tools (phase 5) ---------------------------------

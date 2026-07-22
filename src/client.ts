@@ -175,9 +175,13 @@ export interface LessonTranslationResult {
   unknown_lemmas: string[];
 }
 
-/** One plan section's translation state. */
+/** One plan section's translation state. `index` is the plan-index FIELD
+ *  (what the section PUT takes); `unit_path_prefix` is the ARRAY position
+ *  the plan units use - pair units with sections by the prefix, never by
+ *  index. */
 export interface GuidedTranslationSection {
   index: number;
+  unit_path_prefix: string;
   skip: boolean;
   title: string;
   master_lesson_id: string | null;
@@ -193,6 +197,8 @@ export interface GuidedTranslationSource {
   sibling_submission_id: string | null;
   sibling_status: string | null;
   sibling_plan_exists: boolean;
+  /** Echo verbatim as the plan PUT's base_version. */
+  plan_version: string;
   plan_units: TranslationUnit[];
   sections: GuidedTranslationSection[];
 }
@@ -901,7 +907,7 @@ export class LingoChunkClient {
   putGuidedPlanTranslation(
     submissionId: string,
     language: string,
-    body: { units: TranslationUnitPut[] },
+    body: { base_version: string; units: TranslationUnitPut[] },
   ): Promise<GuidedPlanTranslationResult> {
     return this.putJson(
       `/submissions/${encodeURIComponent(submissionId)}/guided/translations/${encodeURIComponent(
