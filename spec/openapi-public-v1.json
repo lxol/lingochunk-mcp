@@ -1673,7 +1673,7 @@
           "public-v1"
         ],
         "summary": "Validate Lesson",
-        "description": "Dry-run validate a lesson.v1 document WITHOUT saving it.\n\nReturns 200 with ``{valid, errors, unknown_lemmas}`` and reports EVERY\nfailing category at once - schema violations (one entry per pydantic error,\nwith a dotted ``loc``) and reference violations (the same stable codes the\nsave route raises: unknown_positions, position_outside_slice,\naudio_outside_episode, audio_outside_slice, dialogue_mismatch,\norder_mismatch) - so an agent can fix a whole document in one pass instead of\nburning save -> 400 -> fix cycles that only surface the first problem.\n\nRuns no persistence and consumes no lesson-cap budget (so it succeeds even\nat the cap). The transcript queries it runs are bounded by the standard\nper-token / per-user surface rate limits; it deliberately does NOT consume\nthe save route's storage-spam write limiter, since it stores nothing and is\nmeant to be called repeatedly before a single save.\n\n404 if the source submission is not accessible; 400 for a body that is not a\nlesson.v1 ``document`` (e.g. the legacy ``html`` save variant); 413 for a\ndocument past the size cap.\n\n**Requires scope:** `lessons:write`",
+        "description": "Dry-run validate a lesson.v1 document WITHOUT saving it.\n\nReturns 200 with ``{valid, errors, unknown_lemmas}`` and reports EVERY\nfailing category at once - schema violations (one entry per pydantic error,\nwith a dotted ``loc``) and reference/gate violations (the same stable codes\nthe save route raises: youtube_disabled, unknown_positions,\nposition_outside_slice, audio_outside_episode, audio_outside_slice,\ndialogue_mismatch, order_mismatch) - so an agent can fix a whole document in\none pass instead of burning save -> 400 -> fix cycles that only surface the\nfirst problem.\n\nRuns no persistence and consumes no lesson-cap budget (so it succeeds even\nat the cap). The transcript queries it runs are bounded by the standard\nper-token / per-user surface rate limits; it deliberately does NOT consume\nthe save route's storage-spam write limiter, since it stores nothing and is\nmeant to be called repeatedly before a single save.\n\n404 if the source submission is not accessible; 400 for a body that is not a\nlesson.v1 ``document`` (e.g. the legacy ``html`` save variant); 413 for a\ndocument past the size cap.\n\n**Requires scope:** `lessons:write`",
         "operationId": "validate_lesson_api_v1_lessons_validate_post",
         "requestBody": {
           "content": {
@@ -1786,7 +1786,7 @@
           "public-v1"
         ],
         "summary": "Get Lesson Document Route",
-        "description": "Read back a native lesson.v1 document (owner only; 404 for HTML\nlessons, which have no document). Closes the loop for agents: read the\ndocument, revise it, and PUT it back to the same lesson. Without this\nroute an agent could save and list lessons but never see what it (or an\nearlier session) wrote.\n\nThe ``X-Lesson-Version`` response header carries the lesson's\noptimistic-concurrency token; echo it verbatim as the update's\n``base_version`` so a concurrent edit is rejected (409 ``stale_document``)\ninstead of silently overwritten.\n\n**Requires scope:** `lessons:write`",
+        "description": "Read back a native lesson.v1 document (404 for HTML lessons, which have\nno document). Closes the loop for agents: read the document, revise it, and\nPUT it back to the same lesson. Without this route an agent could save and\nlist lessons but never see what it (or an earlier session) wrote.\n\nReadable by the owner, and by a viewer of the source submission when the\nlesson is published (visibility='public') or is a section lesson of a\nshared guided path — the same rule as the in-app reads, so a shared path's\n``lesson_id``s from the guided GET are fetchable here. Editing (the PUT)\nstays owner-only.\n\nThe ``X-Lesson-Version`` response header carries the lesson's\noptimistic-concurrency token; echo it verbatim as the update's\n``base_version`` so a concurrent edit is rejected (409 ``stale_document``)\ninstead of silently overwritten.\n\n**Requires scope:** `lessons:write`",
         "operationId": "get_lesson_document_route_api_v1_lessons__lesson_id__document_get",
         "parameters": [
           {
@@ -3394,7 +3394,7 @@
           "public-v1"
         ],
         "summary": "Get Job Status",
-        "description": "Poll a fan-out / commit job. Owner-only (the job's submission's owner).\nStatus is normalised to processing | completed | failed.\n\n**Requires scope:** `content:read`",
+        "description": "Poll a fan-out / commit job. Owner-only (the job's submission's owner).\nStatus is normalised to processing | completed | failed.\n\nAccepts ANY scope whose flows spawn pollable jobs: a token minted only\nfor translations or guided work must be able to poll the jobs it just\nstarted without also holding content:read (polling reveals status and\nprogress, never content).\n\n**Requires scope:** `content:read`",
         "operationId": "get_job_status_api_v1_jobs__job_id__get",
         "parameters": [
           {
@@ -3480,6 +3480,664 @@
         "x-required-scopes": [
           "content:read"
         ]
+      }
+    },
+    "/api/v1/lessons/{lesson_id}/translation-source": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Everything needed to translate a lesson into one language",
+        "operationId": "get_lesson_translation_source_api_v1_lessons__lesson_id__translation_source_get",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 10,
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonTranslationSourceV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ],
+        "description": "\n\n**Requires scope:** `translations:write`"
+      }
+    },
+    "/api/v1/lessons/{lesson_id}/translations/{language}": {
+      "put": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Create or machine-replace the lesson's edition on the sibling",
+        "operationId": "put_lesson_translation_api_v1_lessons__lesson_id__translations__language__put",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonTranslationPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonTranslationResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unit mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationUnitsErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Edition failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionRejectedV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ],
+        "description": "\n\n**Requires scope:** `translations:write`"
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided/translation-source": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Everything needed to translate a guided path into one language",
+        "operationId": "get_guided_translation_source_api_v1_submissions__submission_id__guided_translation_source_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 10,
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedTranslationSourceV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ],
+        "description": "\n\n**Requires scope:** `translations:write`"
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided/translations/{language}": {
+      "put": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Mint the sibling's guided plan from the master's, translated",
+        "operationId": "put_guided_plan_translation_api_v1_submissions__submission_id__guided_translations__language__put",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuidedPlanTranslationPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedPlanTranslationResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unit mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationUnitsErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ],
+        "description": "\n\n**Requires scope:** `translations:write`"
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided/sections/{index}/translations/{language}": {
+      "put": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Attach the translated edition of one guided part to the sibling",
+        "operationId": "put_guided_section_translation_api_v1_submissions__submission_id__guided_sections__index__translations__language__put",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Index"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuidedSectionTranslationPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedSectionTranslationResultV1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unit mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationUnitsErrorV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or not accessible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict; the ErrorV1 `code` names the case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Edition failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionRejectedV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "translations:write"
+        ],
+        "description": "\n\n**Requires scope:** `translations:write`"
       }
     },
     "/api/v1/submissions/{submission_id}/annotations": {
@@ -3921,6 +4579,451 @@
           "annotations:write"
         ]
       }
+    },
+    "/api/v1/submissions/{submission_id}/guided/plan": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Plan Guided Path",
+        "description": "Trigger (or re-plan) the stage-1 guided planner for a lesson you own.\n\nEnqueues the same server planner the in-app button does (Gemini spend, inside\nthe global daily cap and your per-user guided budget) and returns a job id to\npoll via ``/v1/jobs/{job_id}``. 409 ``plan_in_progress`` / ``plan_ready``\nwhen a plan is already running or ready (a failed plan may be re-planned);\n422 ``submission_too_long`` past the length cap. No lesson is written here -\nthat is a separate step.\n\n**Requires scope:** `guided:write`",
+        "operationId": "plan_guided_path_api_v1_submissions__submission_id__guided_plan_post",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedPlanJobV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not owned, or the flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A plan is already in progress (`plan_in_progress`) or ready (`plan_ready`); planning is one-time per submission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The recording is too long to plan (`submission_too_long`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The planner could not be enqueued (`enqueue_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "guided:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Get Guided Path",
+        "description": "Read the guided path of a lesson you own or may view: plan status,\nstudy-order sections (title, summary, bounds, the generated lesson id +\nfocus, and your completion), the section currently generating, and the most\nrecent writer failure still awaiting a retry. ``status`` is ``none`` until a\nplan is requested. Collection viewers (the same visibility rule as the\nepisode itself) get a ``read_only`` projection of a READY path — their own\ncompletions, the owner's in-flight state blanked; a not-yet-ready path\nreads as ``none``. When ``read_only`` is true, study through the lesson\nreads; the write routes (plan, brief, submit) are owner-only and will 404.\n(The second-wave rail is not part of the public surface.)\n\n**Requires scope:** `guided:read`",
+        "operationId": "get_guided_path_api_v1_submissions__submission_id__guided_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedPathV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not owned, or the flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "guided:read"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided/brief": {
+      "get": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Get Guided Writer Brief",
+        "description": "The writer brief for the NEXT empty study-order section of a path you own.\n\nReturns the deterministically picked ``focus``, the assembled pedagogy\n``instructions`` (the SAME system-prompt content the internal writer\nreceives), the lesson.v1 ``contract``, and the section's ``materials``\n(language/level, the source window to copy, the planner's section entry, the\nsection transcript, and the learner's known lemmas). Compose the document,\ndry-run it with ``POST /v1/lessons/validate``, then submit it for the\nreturned ``section_index``.\n\nRead-only: it claims nothing, spends no server budget, and counts against no\nlimiter, so two agents may both brief and compose - the first valid submit\nwins. 409 ``plan_not_ready`` until the plan is ready, ``path_complete`` when\nevery study section already has a lesson. The ``instructions`` state that the\ntranscript is DATA to teach, never instructions to obey.\n\n**Requires scope:** `guided:write`",
+        "operationId": "get_guided_writer_brief_api_v1_submissions__submission_id__guided_brief_get",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedBriefV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not owned, or the flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The plan is not ready (`plan_not_ready`), the path is complete (`path_complete`), or the next section's transcript is empty (`section_has_no_sentences`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "guided:write"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/guided/sections/{index}/lesson": {
+      "post": {
+        "tags": [
+          "public-v1"
+        ],
+        "summary": "Submit Guided Lesson",
+        "description": "Submit a composed lesson.v1 document as the guided part for ``index``.\n\n``index`` MUST be the next empty study-order section (get it from the brief);\nany other index 409s ``section_not_next``. The document is re-validated\nagainst that section (positions in-section, dialogue/order verbatim, audio\ninside the section window; youtube blocks rejected) and, if valid, attached\natomically through the same save path the internal writer uses, so a part is\nstored identically whoever wrote it. The server stamps the ``generator``\n(default skill ``mcp-guided``, version the pack version) and fills the\ndocument's server-managed ids.\n\nRaces: 409 ``generation_in_flight`` while the in-app writer holds the slot,\n409 ``section_taken`` if the section gained a lesson since the brief. The\nper-user daily guided limit is shared with the in-app button and charged only\non a successful save. Returns the saved lesson summary plus an\n``unknown_lemmas`` advisory.\n\n**Requires scope:** `guided:write`",
+        "operationId": "submit_guided_lesson_api_v1_submissions__submission_id__guided_sections__index__lesson_post",
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Submission Id"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Index"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuidedLessonSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedLessonSavedV1"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not owned, or the flag is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not the next empty section (`section_not_next`), a writer is already generating (`generation_in_flight`), the section was just filled (`section_taken`), the plan is not ready (`plan_not_ready`), or the section has no transcript (`section_has_no_sentences`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The document exceeds the size cap (`document_too_large`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedErrorV1"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The document failed section validation; every failure is listed at once under `detail.errors`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedLessonRejectedV1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope this endpoint requires",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded. The `Retry-After` response header gives the number of seconds to wait.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorV1"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "guided:write"
+        ]
+      }
     }
   },
   "components": {
@@ -4242,6 +5345,20 @@
       },
       "AudioSliceBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "audio_slice",
@@ -4262,6 +5379,27 @@
               }
             ],
             "title": "Label"
+          },
+          "listen_first": {
+            "type": "boolean",
+            "title": "Listen First",
+            "description": "Start the original text layer blurred (paint-only, geometry stable); the learner reveals it with the existing layer control",
+            "default": false
+          },
+          "show_words": {
+            "type": "boolean",
+            "title": "Show Words",
+            "description": "DEPRECATED, inert no-op (the reader is always-open now); use ``listen_first`` for anticipation rounds. Still accepted for back-compat",
+            "default": false
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/SliceNote"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Notes",
+            "description": "Numbered span-anchored footnotes below the reader passage"
           }
         },
         "additionalProperties": false,
@@ -4271,7 +5409,7 @@
           "audio"
         ],
         "title": "AudioSliceBlock",
-        "description": "A standalone player row (e.g. the whole-passage first listen)."
+        "description": "A standalone player row (e.g. the whole-passage first listen).\n\n``listen_first`` starts the passage's original text layer BLURRED\n(paint-only, geometry stable - the layer sits in place at full size, only\nthe ink is washed), so the learner hears the passage before reading it and\nreveals the text with the existing layer control when ready. This is the\nanticipation / listen-first round: nothing is hidden from the DOM, so\nreveal is instant and the layout never reflows.\n\n``show_words`` is DEPRECATED and inert (a documented no-op): it once\nrendered the live transcript words under the row, but the reader became\nalways-open, so the field no longer changes anything. It is still accepted\nfor backwards compatibility (documents authored while it was live must keep\nvalidating). For a listen-first / anticipation round use ``listen_first``\ninstead; ``false`` here is NOT that (it is the schema default, so re-honouring\nit would silently blur every older document that never opted in).\n\n``notes`` is the numbered footnote apparatus below the passage (the\nAssimil treatment the dialogue block carries), span-anchored into the\nlive transcript; see ``SliceNote``."
       },
       "AudioUrlV1": {
         "properties": {
@@ -5126,6 +6264,20 @@
       },
       "DialogueBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "dialogue",
@@ -5139,6 +6291,16 @@
             "maxItems": 30,
             "minItems": 1,
             "title": "Lines"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "parallel",
+              "conversation"
+            ],
+            "title": "Presentation",
+            "default": "auto"
           }
         },
         "additionalProperties": false,
@@ -5148,7 +6310,7 @@
           "lines"
         ],
         "title": "DialogueBlock",
-        "description": "The transcript slice as a dialogue."
+        "description": "The transcript slice as a dialogue.\n\n``presentation`` selects the renderer treatment, presentation only with no\ncontent semantics: ``auto`` (the default) preserves the current inference -\nthe Assimil coursebook treatment (facing translation column, literal gloss,\nfootnote apparatus) whenever any line carries a ``literal`` or a ``note``,\nelse the legacy speaker-forward layout; ``parallel`` forces the coursebook\ntreatment; ``conversation`` forces the speaker-forward treatment."
       },
       "DialogueLine": {
         "properties": {
@@ -5189,6 +6351,19 @@
             ],
             "title": "Translation"
           },
+          "literal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Literal"
+          },
           "highlights": {
             "items": {
               "items": {
@@ -5213,6 +6388,48 @@
             ],
             "title": "Note",
             "description": "Author's aside shown under the line"
+          },
+          "note_quote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Quote",
+            "description": "Exact substring of ``text`` the note is about; the renderer washes it and anchors the note's circled number at its end"
+          },
+          "example": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example",
+            "description": "A fresh example sentence illustrating the note (target text)"
+          },
+          "example_translation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Translation",
+            "description": "Translation of ``example``, shown as an indented second line"
           }
         },
         "additionalProperties": false,
@@ -5222,10 +6439,24 @@
           "text"
         ],
         "title": "DialogueLine",
-        "description": "One transcript sentence presented as a dialogue line.\n\n``position`` anchors the line to the stored sentence (the save route\nverifies ``text`` matches it, so a lesson cannot misattribute content to\nthe recording). ``highlights`` are [start, end) CODE-POINT ranges into\n``text`` for the amber pattern marks (both renderers treat them as code\npoints; supplementary-plane characters count as one). Ranges must not\noverlap - both renderers would otherwise duplicate the overlapped text.\n\n``note`` is a short authorial aside under the line (\"register: informal\",\n\"this is the idiom from the title\") - the author's voice, never quoted\ncontent, so it needs no congruence check. Renders inline mini-Markdown\nmarks (bold/italic/code) only, like ``grammar_box.merke``."
+        "description": "One transcript sentence presented as a dialogue line.\n\n``position`` anchors the line to the stored sentence (the save route\nverifies ``text`` matches it, so a lesson cannot misattribute content to\nthe recording). ``highlights`` are [start, end) CODE-POINT ranges into\n``text`` for the amber pattern marks (both renderers treat them as code\npoints; supplementary-plane characters count as one). Ranges must not\noverlap - both renderers would otherwise duplicate the overlapped text.\n\n``note`` is a short authorial aside under the line (\"register: informal\",\n\"this is the idiom from the title\") - the author's voice, never quoted\ncontent, so it needs no congruence check. Renders inline mini-Markdown\nmarks (bold/italic/code) only, like ``grammar_box.merke``.\n\n``example``/``example_translation`` are the Assimil note shape: a fresh\nexample sentence with its translation, rendered as an indented second line\nunder the note. They belong to the note apparatus (author's content, not\nquoted from the transcript, so no congruence check), which is why\n``example`` requires ``note`` - it extends the note, it does not stand\nalone - and ``example_translation`` requires ``example``."
       },
       "DictationItem": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "position": {
             "type": "integer",
             "minimum": 1.0,
@@ -5300,6 +6531,44 @@
         "title": "DraftSentenceV1",
         "description": "One drafted sentence the agent submits (whole-sentence + per-token)."
       },
+      "EditionRejectedV1": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Always 'invalid_document'"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human summary of the rejection"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/LessonValidationErrorV1"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Every validation failure found at once"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Advisory: vocab/review lemmas the sibling does not know"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "errors"
+        ],
+        "title": "EditionRejectedV1",
+        "description": "The 422 body (under ``detail``) when a translated edition fails\nreference validation against the sibling submission - every failure at\nonce, dry-run style."
+      },
       "ErrorV1": {
         "properties": {
           "detail": {
@@ -5329,6 +6598,20 @@
       },
       "ExerciseDictationBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_dictation",
@@ -5381,6 +6664,20 @@
       },
       "ExerciseGapFillBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_gap_fill",
@@ -5429,6 +6726,18 @@
             ],
             "title": "Wordbank"
           },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "dots"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/GapFillItem"
@@ -5446,10 +6755,24 @@
           "items"
         ],
         "title": "ExerciseGapFillBlock",
-        "description": "Gap-fill, optionally cued by a word bank."
+        "description": "Gap-fill, optionally cued by a word bank.\n\n``style=\"dots\"`` asks renderers for the Assimil cloze treatment: each\ngap drawn as one dot per character of its first accepted answer, so\nthe shape of the missing word is itself a cue. Presentation-only."
       },
       "ExerciseMatchBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_match",
@@ -5502,6 +6825,20 @@
       },
       "ExerciseMcqBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_mcq",
@@ -5599,6 +6936,20 @@
       },
       "ExerciseOrderBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_order",
@@ -5651,6 +7002,20 @@
       },
       "ExerciseProductionBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_production",
@@ -5707,6 +7072,20 @@
       },
       "ExerciseShadowBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "exercise_shadow",
@@ -5756,6 +7135,92 @@
         ],
         "title": "ExerciseShadowBlock",
         "description": "Shadowing: listen to the native line, record yourself, replay your take.\n\nThe product's core practice move, inline in a lesson. No waveform, no\nscoring, no upload - just the loop. Positions join the existing reference\nchecks via ``sentence_positions()``; there is no new route validation and\nno stored answer."
+      },
+      "ExerciseTranslateBlock": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
+          "type": {
+            "type": "string",
+            "const": "exercise_translate",
+            "title": "Type"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "target_to_meaning",
+              "meaning_to_target"
+            ],
+            "title": "Direction"
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "self_check",
+              "type",
+              "speak",
+              "speak_then_type"
+            ],
+            "title": "Response",
+            "default": "self_check"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranslateItem"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "direction",
+          "items"
+        ],
+        "title": "ExerciseTranslateBlock",
+        "description": "Translate/reconstruct: the Assimil daily translate exercise and the\nactive-wave reconstruction in one block (the interaction is identical - cue\nin one language, produce the other, compare with a model, replay the source;\nonly direction, response mode and scheduling differ).\n\nSCORING CONTRACT (stated here verbatim so every renderer and the export stay\nin sync): an item contributes 1 scored point IFF direction is\n``meaning_to_target`` AND response involves typing (``type`` or\n``speak_then_type``) AND the item is anchored (``position`` set) - the\ndiffable-exact case, first-check all-or-nothing like dictation. Every other\nconfiguration is self-assessed and contributes 0. Offline export never\nscores this block (the anchored answer is live text and is never copied into\nthe artifact)."
       },
       "FsrsSummaryV1": {
         "properties": {
@@ -5830,6 +7295,20 @@
       },
       "GapFillItem": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "position": {
             "anyOf": [
               {
@@ -5888,6 +7367,20 @@
       },
       "GrammarBoxBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "grammar_box",
@@ -5984,6 +7477,1047 @@
         ],
         "title": "GrammarEvidence",
         "description": "One evidence row: a piece of the actual passage plus why it matters."
+      },
+      "GuidedActiveJobV1": {
+        "properties": {
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "description": "Progress percentage, 0-100"
+          },
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "description": "Name of the current step"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable progress message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "progress",
+          "step",
+          "message"
+        ],
+        "title": "GuidedActiveJobV1",
+        "description": "Live progress of the newest in-flight guided job (planner or writer).\n\nPresent only while a pass is running; poll it (or the returned job id via\n/v1/jobs/{job_id}) to follow generation."
+      },
+      "GuidedBriefMaterialsV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Learning language (document 'language')"
+          },
+          "translation_language": {
+            "type": "string",
+            "title": "Translation Language",
+            "description": "Translation language (document 'translation_language')"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level",
+            "description": "Working CEFR level to teach to (document 'level')"
+          },
+          "source": {
+            "$ref": "#/components/schemas/GuidedBriefSourceV1",
+            "description": "The document 'source' block, to copy verbatim"
+          },
+          "plan_entry": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Plan Entry",
+            "description": "The planner's section object: title, summary, position bounds, suggested focus, and grammar/vocabulary/function notes"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/GuidedBriefSentenceV1"
+            },
+            "type": "array",
+            "title": "Sentences",
+            "description": "The section's transcript sentences, in order"
+          },
+          "known_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Known Lemmas",
+            "description": "Lemmas the learner's deck already knows well (up to 200); prefer teaching genuinely new vocabulary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "translation_language",
+          "level",
+          "source",
+          "plan_entry",
+          "sentences"
+        ],
+        "title": "GuidedBriefMaterialsV1",
+        "description": "The section's raw material: everything needed to fill the document's\nnon-authored fields and ground its exercises.\n\n``language``/``translation_language``/``level`` populate the document's\ntop-level fields; ``source`` populates its ``source`` block; ``plan_entry``\nis the planner's section object (title, summary, bounds, grammar/vocab\nnotes); ``sentences`` are the section's transcript lines; ``known_lemmas``\nare words the learner's deck already knows well (prefer fresh vocabulary)."
+      },
+      "GuidedBriefSentenceV1": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "description": "1-based transcript position"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The sentence, target language, verbatim"
+          },
+          "translation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation",
+            "description": "Stored translation, when available"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker",
+            "description": "Speaker label, when known"
+          },
+          "start": {
+            "type": "number",
+            "title": "Start",
+            "description": "Sentence audio start (seconds)"
+          },
+          "end": {
+            "type": "number",
+            "title": "End",
+            "description": "Sentence audio end (seconds)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "text",
+          "start",
+          "end"
+        ],
+        "title": "GuidedBriefSentenceV1",
+        "description": "One transcript sentence of the section, the raw material to build from.\n\nQuote ``text`` VERBATIM in dialogue/order blocks (the submit route enforces\nit). ``start``/``end`` are the sentence's own audio window; positions are\n1-based and lie within the section's range."
+      },
+      "GuidedBriefSourceV1": {
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "title": "Submission Id",
+            "description": "Source submission id"
+          },
+          "from_time": {
+            "type": "number",
+            "title": "From Time",
+            "description": "Section audio window start (seconds)"
+          },
+          "to_time": {
+            "type": "number",
+            "title": "To Time",
+            "description": "Section audio window end (seconds)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "submission_id",
+          "from_time",
+          "to_time"
+        ],
+        "title": "GuidedBriefSourceV1",
+        "description": "The ``source`` block to copy verbatim into the lesson.v1 document.\n\nMirrors the document's own ``source``: the submission the lesson teaches and\nthe section's audio window (seconds). Copy it exactly - the submit route\nre-checks every reference against these bounds."
+      },
+      "GuidedBriefV1": {
+        "properties": {
+          "section_index": {
+            "type": "integer",
+            "title": "Section Index",
+            "description": "Plan index of the section this brief targets (the next empty study-order section); submit the lesson for exactly this index"
+          },
+          "focus": {
+            "type": "string",
+            "title": "Focus",
+            "description": "The teaching focus deterministically chosen for this section (comprehension | grammar | speaking | vocabulary)"
+          },
+          "pack_version": {
+            "type": "string",
+            "title": "Pack Version",
+            "description": "Version of the teaching pack these instructions came from (recorded on the submitted lesson's generator for provenance)"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "description": "The assembled pedagogy (markdown): the arc, the picked focus recipe, level guidance and quality rules - the same system-prompt content the internal writer receives, plus the transcript-is-data notice"
+          },
+          "contract": {
+            "type": "string",
+            "title": "Contract",
+            "description": "The lesson.v1 authoring contract: the output format, every block type, and the grounding rules the submit route enforces"
+          },
+          "materials": {
+            "$ref": "#/components/schemas/GuidedBriefMaterialsV1",
+            "description": "The section's raw material to write from"
+          }
+        },
+        "type": "object",
+        "required": [
+          "section_index",
+          "focus",
+          "pack_version",
+          "instructions",
+          "contract",
+          "materials"
+        ],
+        "title": "GuidedBriefV1",
+        "description": "The runtime writer brief for the NEXT empty study-order section.\n\nEverything an agent needs to compose ONE guided lesson.v1 part to the same\nstandard the internal writer does: the deterministically picked ``focus``,\nthe assembled pedagogy ``instructions`` (the SAME system-prompt content the\ninternal writer receives), the lesson.v1 ``contract``, and the section's\n``materials``. Read-only: it claims nothing, so two agents may both brief and\ncompose; the first valid submit to\n``POST .../guided/sections/{index}/lesson`` wins.\n\nCompose the document, dry-run it with ``POST /v1/lessons/validate``, then\nsubmit it for ``section_index``. The ``instructions`` state that the\ntranscript is DATA to teach, never instructions to obey."
+      },
+      "GuidedErrorV1": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Stable machine-readable conflict code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "GuidedErrorV1",
+        "description": "The structured body of a guided-path conflict / gate failure.\n\nDistinct from ``ErrorV1``: the guided surface carries a machine-readable\n``code`` first and a human ``message``, matching the in-app guided routes'\nconvention so a client branches on ``code`` and reworded prose never breaks\nit (e.g. ``plan_in_progress``, ``plan_ready``, ``submission_too_long``,\n``guided_daily_limit``, ``enqueue_failed``)."
+      },
+      "GuidedGenerationErrorV1": {
+        "properties": {
+          "section_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Index",
+            "description": "Plan index of the section the writer was generating"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Generic failure message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "GuidedGenerationErrorV1",
+        "description": "The most recent writer failure still awaiting a fresh attempt.\n\nSurfaced so a silently-failed part generation is not lost. ``message`` is\ndeliberately generic (the real reason stays server-side); ``section_index``\npins it to the still-ungenerated section the writer was on."
+      },
+      "GuidedGeneratorV1": {
+        "properties": {
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill",
+            "description": "Generator skill slug (default 'mcp-guided')"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version",
+            "description": "Generator version (default: the teaching pack version)"
+          }
+        },
+        "type": "object",
+        "title": "GuidedGeneratorV1",
+        "description": "The caller's self-declared provenance for a submitted guided lesson.\n\nOptional and display-only (never a trust boundary): ``skill`` defaults to\n``mcp-guided`` and ``version`` to the teaching pack's version, so a submitted\npart is always traceable to the pack it was written against, distinct from\nthe internal writer's ``guided-<focus>`` skill. Both are locked to the same\ndisplay-safe slug charset the lesson document's generator uses."
+      },
+      "GuidedLessonRejectedV1": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Always 'invalid_document'"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human summary of the rejection"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/LessonValidationErrorV1"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Every validation failure found (section bounds, congruence, existence, youtube), across all categories at once"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Advisory: vocab/review lemmas the submission does not know"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "errors"
+        ],
+        "title": "GuidedLessonRejectedV1",
+        "description": "The 422 body (under ``detail``) when a submitted document fails validation.\n\nReports EVERY reference/section failure at once (the dry-run validate style),\nso an agent can fix the whole document in one pass rather than one save cycle\nper error. Schema-level failures never reach this: they are rejected as the\nrequest's own 422 by the document model."
+      },
+      "GuidedLessonSavedV1": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Lesson id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Lesson title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "Language (ISO 639-1)"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "description": "Stored format: 'html' or 'lesson.v1'",
+            "default": "html"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id",
+            "description": "Source submission (lesson.v1 only)"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level",
+            "description": "CEFR level, when known"
+          },
+          "estimated_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Minutes",
+            "description": "Estimated study time in minutes, when known"
+          },
+          "generator_skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generator Skill",
+            "description": "Self-declared slug of the skill that composed the lesson (from the document's 'generator' field; display metadata, lesson.v1 only)"
+          },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "description": "'private' (owner only) or 'public' (visible to everyone who can view the source submission)",
+            "default": "private"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id",
+            "description": "Id of the course this lesson belongs to, if any"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence",
+            "description": "Ordering position within its course (ties break by created_at); null when the lesson is not in a course"
+          },
+          "course_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Title",
+            "description": "Title of the course this lesson belongs to (echoed on list responses so a client can group without a second call); null when uncoursed"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "Size of the stored artefact in bytes"
+          },
+          "source_submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Submission Ids",
+            "description": "Provenance submission ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the lesson was saved"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When the lesson.v1 document was last edited in place; null when never edited since creation"
+          },
+          "app_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Url",
+            "description": "App URL of the native lesson"
+          },
+          "section_index": {
+            "type": "integer",
+            "title": "Section Index",
+            "description": "Plan index of the section this lesson was attached to"
+          },
+          "focus": {
+            "type": "string",
+            "title": "Focus",
+            "description": "The focus stamped on the section (the deterministic pick for it, which feeds the next section's anti-repetition rule)"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Vocab/review lemmas the source submission does not know; the lesson saved fine but these lose their Words-tab crosslink"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "language",
+          "size_bytes",
+          "created_at",
+          "section_index",
+          "focus"
+        ],
+        "title": "GuidedLessonSavedV1",
+        "description": "The result of attaching a guided part: the saved lesson's metadata plus\nwhich section it filled and the advisory unknown-lemmas list."
+      },
+      "GuidedLessonSubmitRequest": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/LessonDocumentV1",
+            "description": "The lesson.v1 document to attach"
+          },
+          "generator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedGeneratorV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional self-declared provenance stamped on the saved lesson"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document"
+        ],
+        "title": "GuidedLessonSubmitRequest",
+        "description": "Submit a composed lesson.v1 ``document`` as the next guided part.\n\nThe document is re-validated against the target section (positions in-section,\ndialogue verbatim, audio inside the section's window; youtube blocks rejected)\nand attached atomically. ``generator`` is optional self-declared provenance;\nthe server stamps it (defaulting skill to ``mcp-guided`` and version to the\npack version) onto the stored document, overriding any generator the document\nitself carries."
+      },
+      "GuidedPathV1": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Plan lifecycle: none | pending | running | ready | failed"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Planner error message, when status is 'failed'"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id",
+            "description": "Id of the course the generated lessons are filed under; null until the first part is written"
+          },
+          "generating_section": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generating Section",
+            "description": "Plan index of the section currently being written, or null when idle"
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GuidedSectionV1"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections",
+            "description": "Study-order sections; null until a plan exists"
+          },
+          "active_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedActiveJobV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Live progress of the in-flight planner/writer pass, when one is running"
+          },
+          "last_generation_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedGenerationErrorV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The most recent writer failure still awaiting a fresh attempt; null otherwise"
+          },
+          "read_only": {
+            "type": "boolean",
+            "title": "Read Only",
+            "description": "True when this is someone else's path shared with you through a collection: study it via the lesson reads, but the write routes (plan, brief, submit) are owner-only and will 404",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "GuidedPathV1",
+        "description": "A submission's guided path: plan lifecycle, study-order sections, and any\nin-flight generation.\n\n``status`` is ``none`` when no plan has ever been requested; otherwise it is\nthe plan lifecycle (pending | running | ready | failed). ``sections`` is the\nstudy-order section list (skips excluded), null until a plan exists.\n``generating_section`` is the plan index of the section currently being\nwritten, null when idle. (The second-wave rail is intentionally not part of\nthe public surface.)"
+      },
+      "GuidedPlanJobV1": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job id to poll via /v1/jobs/{job_id}"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "GuidedPlanJobV1",
+        "description": "The enqueued planner job for a guided path (poll via /v1/jobs/{job_id})."
+      },
+      "GuidedPlanTranslationPutRequest": {
+        "properties": {
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationUnitPutV1"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Units",
+            "description": "The translated plan units; must cover the plan's units exactly"
+          }
+        },
+        "type": "object",
+        "required": [
+          "units"
+        ],
+        "title": "GuidedPlanTranslationPutRequest",
+        "description": "Mint the sibling submission's guided plan from the master's, with the\nplan's meta text translated (structure copied verbatim, section lesson\nlinks cleared)."
+      },
+      "GuidedPlanTranslationResultV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The edition language"
+          },
+          "sibling_submission_id": {
+            "type": "string",
+            "title": "Sibling Submission Id",
+            "description": "The sibling the plan was created on"
+          },
+          "section_count": {
+            "type": "integer",
+            "title": "Section Count",
+            "description": "Number of sections in the plan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "sibling_submission_id",
+          "section_count"
+        ],
+        "title": "GuidedPlanTranslationResultV1",
+        "description": "The minted sibling plan."
+      },
+      "GuidedSectionCompletionV1": {
+        "properties": {
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At",
+            "description": "When you first completed the section's lesson (never moves forward)"
+          },
+          "earned": {
+            "type": "integer",
+            "title": "Earned",
+            "description": "Points earned on the remembered pass"
+          },
+          "max_score": {
+            "type": "integer",
+            "title": "Max Score",
+            "description": "Maximum scorable points on that pass"
+          }
+        },
+        "type": "object",
+        "required": [
+          "completed_at",
+          "earned",
+          "max_score"
+        ],
+        "title": "GuidedSectionCompletionV1",
+        "description": "The requesting user's saved completion of a guided section's lesson."
+      },
+      "GuidedSectionTranslationPutRequest": {
+        "properties": {
+          "base_version": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Base Version",
+            "description": "The MASTER part's version token (from its lesson translation source); a mismatch means it changed (409)"
+          },
+          "generator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedGeneratorV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Self-declared translator provenance (default skill 'mcp-translation')"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationUnitPutV1"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Units",
+            "description": "The translated units of the master part's document; must cover its units exactly"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version",
+          "units"
+        ],
+        "title": "GuidedSectionTranslationPutRequest",
+        "description": "Attach the translated edition of one master guided part to the same\nsection of the sibling's plan."
+      },
+      "GuidedSectionTranslationResultV1": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "title": "Lesson Id",
+            "description": "The edition lesson's id"
+          },
+          "section_index": {
+            "type": "integer",
+            "title": "Section Index",
+            "description": "The plan section it fills"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The edition's meaning language"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Advisory: vocab/review lemmas the sibling does not know"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id",
+          "section_index",
+          "language"
+        ],
+        "title": "GuidedSectionTranslationResultV1",
+        "description": "The attached section edition."
+      },
+      "GuidedSectionV1": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "Section index within the plan (stable id, 1-based)"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Section title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "One-line summary of what the section covers"
+          },
+          "from_position": {
+            "type": "integer",
+            "title": "From Position",
+            "description": "First transcript sentence position in the section (1-based)"
+          },
+          "to_position": {
+            "type": "integer",
+            "title": "To Position",
+            "description": "Last transcript sentence position in the section (1-based, inclusive)"
+          },
+          "cefr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cefr",
+            "description": "Estimated CEFR level of the section (A1-C2)"
+          },
+          "study_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Study Minutes",
+            "description": "Estimated study time in minutes, when known"
+          },
+          "suggested_focus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Focus",
+            "description": "The planner's suggested teaching focus for the section"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Id",
+            "description": "Id of the generated lesson for this section; null until it is written"
+          },
+          "lesson_focus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Focus",
+            "description": "The focus the written lesson actually used; null until written"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedSectionCompletionV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your completion of this section's lesson; null until you finish it"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "title",
+          "summary",
+          "from_position",
+          "to_position"
+        ],
+        "title": "GuidedSectionV1",
+        "description": "One study-order section of a submission's guided path.\n\nA section is a contiguous span of the transcript the planner carved out to\nteach as one lesson. ``index`` is its stable id within the plan; a written\nlesson fills ``lesson_id``/``lesson_focus`` and, once you finish it,\n``completion``."
+      },
+      "GuidedTranslationSectionV1": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "description": "Plan index"
+          },
+          "skip": {
+            "type": "boolean",
+            "title": "Skip",
+            "description": "True for sections the path skips"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The master section's title"
+          },
+          "master_lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Lesson Id",
+            "description": "The master part to translate (None = not yet written on the master; nothing to translate)"
+          },
+          "sibling_lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sibling Lesson Id",
+            "description": "The sibling's part (None = untranslated)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "skip",
+          "title"
+        ],
+        "title": "GuidedTranslationSectionV1",
+        "description": "One plan section's translation state."
+      },
+      "GuidedTranslationSourceV1": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The path's target (learning) language"
+          },
+          "translation_language": {
+            "type": "string",
+            "title": "Translation Language",
+            "description": "The master's meaning language (the plan units' language)"
+          },
+          "target_language": {
+            "type": "string",
+            "title": "Target Language",
+            "description": "The requested edition language"
+          },
+          "sibling_exists": {
+            "type": "boolean",
+            "title": "Sibling Exists",
+            "description": "Whether the language sibling submission exists"
+          },
+          "sibling_submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sibling Submission Id"
+          },
+          "sibling_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sibling Status"
+          },
+          "sibling_plan_exists": {
+            "type": "boolean",
+            "title": "Sibling Plan Exists",
+            "description": "Whether the sibling already has a guided plan (translated or generated); the plan PUT refuses to overwrite one"
+          },
+          "plan_units": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationUnitV1"
+            },
+            "type": "array",
+            "title": "Plan Units",
+            "description": "The plan's translatable units (section titles, summaries, skip reasons, function labels, grammar names)"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/GuidedTranslationSectionV1"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "Per-section translation state, in plan order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "translation_language",
+          "target_language",
+          "sibling_exists",
+          "sibling_plan_exists",
+          "plan_units",
+          "sections"
+        ],
+        "title": "GuidedTranslationSourceV1",
+        "description": "Everything needed to translate a guided path into one target language.\n\nFlow: PUT the plan units first (mints the sibling's plan), then for each\nsection with a ``master_lesson_id``, fetch that lesson's translation\nsource (per-lesson endpoint) and PUT the section translation. Sections\ncan be translated in any order."
       },
       "HTTPValidationError": {
         "properties": {
@@ -6578,6 +9112,9 @@
                   "$ref": "#/components/schemas/AudioSliceBlock"
                 },
                 {
+                  "$ref": "#/components/schemas/YoutubeSliceBlock"
+                },
+                {
                   "$ref": "#/components/schemas/DialogueBlock"
                 },
                 {
@@ -6605,6 +9142,9 @@
                   "$ref": "#/components/schemas/ExerciseShadowBlock"
                 },
                 {
+                  "$ref": "#/components/schemas/ExerciseTranslateBlock"
+                },
+                {
                   "$ref": "#/components/schemas/ExerciseProductionBlock"
                 },
                 {
@@ -6623,11 +9163,13 @@
                   "exercise_order": "#/components/schemas/ExerciseOrderBlock",
                   "exercise_production": "#/components/schemas/ExerciseProductionBlock",
                   "exercise_shadow": "#/components/schemas/ExerciseShadowBlock",
+                  "exercise_translate": "#/components/schemas/ExerciseTranslateBlock",
                   "grammar_box": "#/components/schemas/GrammarBoxBlock",
                   "prose": "#/components/schemas/ProseBlock",
                   "review": "#/components/schemas/ReviewBlock",
                   "section": "#/components/schemas/SectionBlock",
-                  "vocab": "#/components/schemas/VocabBlock"
+                  "vocab": "#/components/schemas/VocabBlock",
+                  "youtube_slice": "#/components/schemas/YoutubeSliceBlock"
                 }
               }
             },
@@ -6762,6 +9304,193 @@
         ],
         "title": "LessonSource",
         "description": "Where the lesson's material comes from (one submission in v1).\n\nTimes reject inf/nan: canonical serialisation would turn them into null,\nsilently erasing the declared slice on re-read."
+      },
+      "LessonTranslationPutRequest": {
+        "properties": {
+          "base_version": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Base Version",
+            "description": "The master's version token from the translation source; a mismatch means the master changed and the units are stale (409)"
+          },
+          "generator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuidedGeneratorV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Self-declared translator provenance (default skill 'mcp-translation')"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationUnitPutV1"
+            },
+            "type": "array",
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Units",
+            "description": "The translated units; must cover the source's units exactly"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version",
+          "units"
+        ],
+        "title": "LessonTranslationPutRequest",
+        "description": "Create (or machine-replace) the edition of a lesson on the target\nlanguage's sibling submission, in one request."
+      },
+      "LessonTranslationResultV1": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "title": "Lesson Id",
+            "description": "The edition lesson's id (distinct from the master)"
+          },
+          "submission_id": {
+            "type": "string",
+            "title": "Submission Id",
+            "description": "The sibling submission it attaches to"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The edition's meaning language"
+          },
+          "replaced": {
+            "type": "boolean",
+            "title": "Replaced",
+            "description": "True when an existing machine edition was replaced in place"
+          },
+          "unknown_lemmas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Lemmas",
+            "description": "Advisory: vocab/review lemmas the sibling does not know"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id",
+          "submission_id",
+          "language",
+          "replaced"
+        ],
+        "title": "LessonTranslationResultV1",
+        "description": "The saved edition."
+      },
+      "LessonTranslationSourceV1": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "title": "Lesson Id",
+            "description": "The master lesson"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "The lesson's target (learning) language - never translated"
+          },
+          "translation_language": {
+            "type": "string",
+            "title": "Translation Language",
+            "description": "The master's current meaning language (the language the units are written in)"
+          },
+          "target_language": {
+            "type": "string",
+            "title": "Target Language",
+            "description": "The requested edition language (the language to translate the units into)"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level",
+            "description": "CEFR level; B1+ lessons may write meta text in the target language - return such units unchanged"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "The lesson's version token; echo verbatim as the PUT's base_version"
+          },
+          "sibling_exists": {
+            "type": "boolean",
+            "title": "Sibling Exists",
+            "description": "Whether the language sibling submission exists (create it first via add_language or the draft flow if not)"
+          },
+          "sibling_submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sibling Submission Id",
+            "description": "The sibling submission the edition will attach to"
+          },
+          "sibling_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sibling Status",
+            "description": "The sibling's processing status (must be 'ready' to accept an edition)"
+          },
+          "existing_edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existing Edition Id",
+            "description": "An edition of this master already on the sibling, if any"
+          },
+          "existing_edition_edited": {
+            "type": "boolean",
+            "title": "Existing Edition Edited",
+            "description": "True when that edition was hand-edited in place; the PUT then refuses to replace it",
+            "default": false
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/TranslationUnitV1"
+            },
+            "type": "array",
+            "title": "Units",
+            "description": "Every translatable unit, in document order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id",
+          "language",
+          "translation_language",
+          "target_language",
+          "version",
+          "sibling_exists",
+          "units"
+        ],
+        "title": "LessonTranslationSourceV1",
+        "description": "Everything needed to translate one lesson into one target language.\n\nRead the whole document first (get_lesson) for context; translate ONLY\nthe units; echo ``version`` back as ``base_version`` on the PUT (the\nlesson's optimistic-concurrency token - paths address this exact stored\nrevision)."
       },
       "LessonUpdateRequest": {
         "properties": {
@@ -7220,7 +9949,7 @@
           "message"
         ],
         "title": "LessonValidationErrorV1",
-        "description": "One validation failure found in a dry run.\n\n``code`` is the stable category. Schema failures carry a ``loc`` (a dotted\npath into the document, e.g. ``blocks.3.lines.0.position``) and the pydantic\n``message``. Reference failures carry the same stable codes the save route\nraises (``unknown_positions``, ``position_outside_slice``,\n``audio_outside_episode``, ``audio_outside_slice``, ``dialogue_mismatch``,\n``order_mismatch``) with the offending ``positions`` or ``audio_windows``\nspelled out in full (the human ``message`` truncates long lists; these do\nnot)."
+        "description": "One validation failure found in a dry run.\n\n``code`` is the stable category. Schema failures carry a ``loc`` (a dotted\npath into the document, e.g. ``blocks.3.lines.0.position``) and the pydantic\n``message``. Reference/gate failures carry the same stable codes the save\nroute raises (``youtube_disabled``, ``unknown_positions``,\n``position_outside_slice``, ``audio_outside_episode``, ``audio_outside_slice``,\n``dialogue_mismatch``, ``order_mismatch``) with the offending ``positions``\nor ``audio_windows`` spelled out in full (the human ``message`` truncates\nlong lists; these do not)."
       },
       "LessonValidationV1": {
         "properties": {
@@ -7435,6 +10164,20 @@
       },
       "OrderItem": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "position": {
             "anyOf": [
               {
@@ -7483,6 +10226,20 @@
       },
       "ProseBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "prose",
@@ -7498,7 +10255,8 @@
             "type": "string",
             "enum": [
               "instruction",
-              "body"
+              "body",
+              "culture"
             ],
             "title": "Style",
             "default": "body"
@@ -7511,7 +10269,7 @@
           "text"
         ],
         "title": "ProseBlock",
-        "description": "Instruction lines and short passages.\n\n``text`` renders through the app's mini-Markdown subset: ``**bold**``,\n``*italic*``, backtick code, ``- ``/``* `` bullet lines, and blank-line\nparagraph breaks. Headings, links, tables and raw HTML are NOT rendered -\nthey show as literal text. The same subset applies to\n``grammar_box.explanation``; exercise ``instruction`` fields and\n``grammar_box.merke``/``achtung`` render the inline marks only. All other\ntext fields (titles, prompts, options, meanings, dialogue) are plain text."
+        "description": "Instruction lines and short passages.\n\n``text`` renders through the app's mini-Markdown subset: ``**bold**``,\n``*italic*``, backtick code, ``- ``/``* `` bullet lines, and blank-line\nparagraph breaks. Headings, links, tables and raw HTML are NOT rendered -\nthey show as literal text. The same subset applies to\n``grammar_box.explanation``; exercise ``instruction`` fields and\n``grammar_box.merke``/``achtung`` render the inline marks only. All other\ntext fields (titles, prompts, options, meanings, dialogue) are plain text.\n\n``style=\"culture\"`` renders as a lightly ruled labelled callout (the Assimil\n``nota culturale`` treatment - a \"Culture note\" caption, ink-bordered like\n``grammar_box`` but lighter), giving a cultural aside its own visual\nidentity as a different kind of text. It uses the same mini-Markdown rules\nas ``body``; the difference is presentation only, no content semantics."
       },
       "PutTranslationsRequestV1": {
         "properties": {
@@ -7628,6 +10386,20 @@
       },
       "ReviewBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "review",
@@ -7664,6 +10436,20 @@
       },
       "SectionBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "section",
@@ -7775,6 +10561,20 @@
       },
       "ShadowItem": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "position": {
             "type": "integer",
             "minimum": 1.0,
@@ -7802,6 +10602,72 @@
         ],
         "title": "ShadowItem",
         "description": "One sentence the learner shadows (listen → record → replay their take).\n\n``position`` (REQUIRED) anchors the item to the stored sentence: the\nrenderer plays that sentence's own range from the LIVE transcript and shows\nits live text, so the line stays truthful as the transcript is edited -\nnothing is copied into the document. The recorded take is in-memory only\n(never uploaded, never stored), so there is no answer to check or leak and\nthe block contributes nothing to the score (self-assessed, like\nproduction)."
+      },
+      "SliceNote": {
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Position",
+            "description": "1-based transcript position"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote",
+            "description": "Exact substring of the live sentence the note is about"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "example": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example",
+            "description": "A fresh example sentence illustrating the note (target text)"
+          },
+          "example_translation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Translation",
+            "description": "Translation of ``example``, shown as an indented second line"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "position",
+          "text"
+        ],
+        "title": "SliceNote",
+        "description": "A numbered footnote under an ``audio_slice`` reader passage.\n\n``position`` anchors the note to a live transcript sentence; ``quote``\nnames the exact substring of that sentence the note is about. Matching is\nRENDER-TIME only (nothing is copied into the document, the same live-text\nrule as ``show_words``): the renderer washes the found span and sets the\ncircled note number at its end, and a quote the live text no longer\ncontains degrades to a sentence-end marker, so a transcript edit can\nnever paint a wrong span. ``text`` renders inline mini-Markdown marks\n(bold/italic/code) only, like ``DialogueLine.note``.\n\n``example``/``example_translation`` are the Assimil note shape: a fresh\nexample sentence with its translation, rendered as an indented second line\nunder the note. They are the author's content (not quoted from the\ntranscript), so they carry no congruence check; only the pairing rule\napplies - ``example_translation`` requires ``example`` (a translation with\nnothing to translate is meaningless). The note itself always has ``text``,\nso ``example`` needs no separate anchor of its own."
       },
       "SubmissionCreatedV1": {
         "properties": {
@@ -8092,6 +10958,94 @@
         "title": "TranscriptSliceV1",
         "description": "A (possibly sliced) transcript: the sentences plus enough context to page."
       },
+      "TranslateItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0,
+                "description": "1-based transcript position"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position",
+            "description": "Anchor sentence in the transcript (anchored item); unset for a recombination item"
+          },
+          "cue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cue",
+            "description": "The prompt shown to the learner; required for recombination items, an author override for anchored items"
+          },
+          "model_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Answer",
+            "description": "The reference answer; required for recombination items, an author override for anchored items"
+          },
+          "source_positions": {
+            "items": {
+              "type": "integer",
+              "minimum": 1.0,
+              "description": "1-based transcript position"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "title": "Source Positions",
+            "description": "Provenance: the transcript sentences a recombination item's chunks came from; must be empty for an anchored item"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TranslateItem",
+        "description": "One translate prompt, in one of two shapes.\n\nANCHORED (``position`` set): the item is a live transcript sentence. Nothing\nis copied into the document - the live sentence supplies the target text\n(in ``meaning_to_target``, diffed like dictation) or the cue\n(``target_to_meaning``), and the stored sentence translation is the fallback\nmodel answer / cue. ``cue`` and ``model_answer`` here are author OVERRIDES\nonly (used when the author wants wording other than the live text or its\nstored translation), never required; ``source_positions`` must be empty\nbecause the anchor sentence IS the source, so naming other sources would be\ncontradictory.\n\nRECOMBINATION (``position`` unset): the item is a fresh sentence that\nrecombines the lesson's material, so it is NOT in the transcript. It must\ncarry its own ``cue`` AND ``model_answer`` (there is no live text to fall\nback on) and at least one ``source_positions`` entry naming the sentences\nits chunks came from, so an invented sentence stays grounded and lintable.\n\n``model_answer`` sits in Pydantic's protected ``model_`` namespace, opened\nhere as it is on ``ExerciseProductionBlock``."
+      },
       "TranslationSourceSentenceV1": {
         "properties": {
           "position": {
@@ -8209,6 +11163,154 @@
         "title": "TranslationSourceV1",
         "description": "A page of source sentences for the agent to translate."
       },
+      "TranslationUnitPutV1": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Path",
+            "description": "The unit path exactly as served by the translation source"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "description": "The translated (or passed-through) text for this unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "text"
+        ],
+        "title": "TranslationUnitPutV1",
+        "description": "One translated unit sent back: the source unit's path plus your text."
+      },
+      "TranslationUnitV1": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Dotted path addressing this string in the source (e.g. 'blocks.7.options.2')"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The source text to translate or adapt"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "'render' (faithful) or 'adapt' (localise)"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length",
+            "description": "Character cap the translated text must respect"
+          },
+          "passthrough_if_target": {
+            "type": "boolean",
+            "title": "Passthrough If Target",
+            "description": "True when the text may legitimately already be in the target language and must then be returned unchanged"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context",
+            "description": "Owning model and field (e.g. 'DialogueLine.literal'), for per-field guidance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "text",
+          "kind",
+          "passthrough_if_target",
+          "context"
+        ],
+        "title": "TranslationUnitV1",
+        "description": "One translatable meta-language string of a lesson document or guided\nplan, addressed by its dotted path.\n\n``kind``: ``render`` = translate faithfully; ``adapt`` = localise for the\nnew learner language (contrastive content: grammar explanations,\nwatch-outs, literal glosses, notes, translate cues). One rule binds every\nunit regardless of kind: text already in the TARGET language must be\nreturned unchanged (B1+ lessons write instructions, B2+ everything, in\nthe target language by design). ``passthrough_if_target`` marks the\nfields where that ambiguity is structural at any level (MCQ\nprompt/options)."
+      },
+      "TranslationUnitsErrorV1": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "Human summary"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "'unit_coverage' or 'invalid_units'"
+          },
+          "missing_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Paths",
+            "description": "Source unit paths absent from the payload (first 20)"
+          },
+          "unknown_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unknown Paths",
+            "description": "Payload paths the source does not contain (first 20)"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/UnitProblemV1"
+            },
+            "type": "array",
+            "title": "Problems",
+            "description": "Per-unit value failures"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "code"
+        ],
+        "title": "TranslationUnitsErrorV1",
+        "description": "The 400 body when the submitted units do not fit the source.\n\n``unit_coverage``: the map must cover the source's units EXACTLY -\n``missing_paths``/``unknown_paths`` name the difference (samples, capped\nat 20 each). ``invalid_units``: per-unit value failures in ``problems``.\nFix everything in ONE retry; all violations are reported at once."
+      },
+      "UnitProblemV1": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "The offending unit path"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Stable failure category"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "code",
+          "message"
+        ],
+        "title": "UnitProblemV1",
+        "description": "One rejected unit value (code: unit_empty, unit_too_long,\nunit_collapsed)."
+      },
       "UpdateAnnotationV1": {
         "properties": {
           "note": {
@@ -8267,6 +11369,20 @@
       },
       "VocabBlock": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
           "type": {
             "type": "string",
             "const": "vocab",
@@ -8694,6 +11810,95 @@
         ],
         "title": "VocabularyLookupV1",
         "description": "A single-word lookup: the learner's own context if present, backed by the\nshared enrichment lexicon as a fallback for gender/CEFR."
+      },
+      "YoutubeSlice": {
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{11}$",
+            "title": "Video Id"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start",
+            "description": "Clip start in seconds"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End",
+            "description": "Clip end in seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "video_id"
+        ],
+        "title": "YoutubeSlice",
+        "description": "A [start, end) window into a YouTube video (feature-flagged).\n\nMirrors ``AudioSlice`` but names a YouTube video instead of a range into\nthe submission's own stream. ``video_id`` is the bare 11-character id (the\nrenderer/export build the nocookie embed and watch URLs from it, never a\ncaller-supplied URL, so only the locked id charset ever reaches an href or\niframe src). ``start``/``end`` are OPTIONAL: absent means play the whole\nvideo; when both are present ``end`` must be greater than ``start``.\n\ninf/nan are rejected for the same reason as ``AudioSlice``: they pass ge\nchecks but canonical serialisation emits them as null, bricking every later\nre-read of the stored document."
+      },
+      "YoutubeSliceBlock": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9]{4,16}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Server-managed stable identity; never author or modify it - the save route fills and preserves it.",
+            "readOnly": true
+          },
+          "type": {
+            "type": "string",
+            "const": "youtube_slice",
+            "title": "Type"
+          },
+          "video": {
+            "$ref": "#/components/schemas/YoutubeSlice"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "video"
+        ],
+        "title": "YoutubeSliceBlock",
+        "description": "A YouTube player row (feature-flagged; see ``settings.youtube_enabled``).\n\nThe video counterpart of ``AudioSliceBlock``: it plays a YouTube embed\ninstead of the submission's own audio. Only valid on deployments with the\nYouTube integration enabled, so the save/validate routes reject a document\ncarrying this block while the flag is off (flag-off behaviour is unchanged,\nno YouTube surface can be stored). The offline HTML export renders it as a\nplain \"Watch on YouTube\" link, since exported HTML lives outside the app and\ncarries no embedded player."
       }
     },
     "securitySchemes": {

@@ -126,6 +126,98 @@ export interface DeleteDraftResult {
   deleted_sentences: number;
 }
 
+/** One translatable meta-language string of a lesson document or guided plan
+ *  (the master + editions surface). */
+export interface TranslationUnit {
+  /** Dotted path addressing this string in the source revision. */
+  path: string;
+  text: string;
+  /** 'render' (translate faithfully) or 'adapt' (localise the contrast). */
+  kind: string;
+  /** Character cap the translated text must respect. */
+  max_length: number | null;
+  /** True when the text may already be target-language and must then be
+   *  returned unchanged (MCQ prompt/options). */
+  passthrough_if_target: boolean;
+  /** Owning model and field, e.g. 'DialogueLine.literal'. */
+  context: string;
+}
+
+/** One translated unit sent back: path + your text. */
+export interface TranslationUnitPut {
+  path: string;
+  text: string;
+}
+
+/** Result of GET /lessons/{id}/translation-source. */
+export interface LessonTranslationSource {
+  lesson_id: string;
+  language: string;
+  translation_language: string;
+  target_language: string;
+  level: string | null;
+  /** Echo verbatim as the PUT's base_version. */
+  version: string;
+  sibling_exists: boolean;
+  sibling_submission_id: string | null;
+  sibling_status: string | null;
+  existing_edition_id: string | null;
+  existing_edition_edited: boolean;
+  units: TranslationUnit[];
+}
+
+/** Result of PUT /lessons/{id}/translations/{language}. */
+export interface LessonTranslationResult {
+  lesson_id: string;
+  submission_id: string;
+  language: string;
+  replaced: boolean;
+  unknown_lemmas: string[];
+}
+
+/** One plan section's translation state. */
+export interface GuidedTranslationSection {
+  index: number;
+  skip: boolean;
+  title: string;
+  master_lesson_id: string | null;
+  sibling_lesson_id: string | null;
+}
+
+/** Result of GET /submissions/{id}/guided/translation-source. */
+export interface GuidedTranslationSource {
+  language: string;
+  translation_language: string;
+  target_language: string;
+  sibling_exists: boolean;
+  sibling_submission_id: string | null;
+  sibling_status: string | null;
+  sibling_plan_exists: boolean;
+  plan_units: TranslationUnit[];
+  sections: GuidedTranslationSection[];
+}
+
+/** Result of PUT /submissions/{id}/guided/translations/{language}. */
+export interface GuidedPlanTranslationResult {
+  language: string;
+  sibling_submission_id: string;
+  section_count: number;
+}
+
+/** Result of PUT /submissions/{id}/guided/sections/{i}/translations/{lang}. */
+export interface GuidedSectionTranslationResult {
+  lesson_id: string;
+  section_index: number;
+  language: string;
+  unknown_lemmas: string[];
+}
+
+/** Self-declared translator provenance. */
+export interface TranslatorGenerator {
+  skill?: string;
+  version?: string;
+}
+
 /** One creator annotation: a markdown note anchored to a transcript sentence,
  *  tinted onto a char span or the whole sentence. */
 export interface AnnotationV1 {
@@ -324,6 +416,36 @@ function formatDocumentError(item: unknown): string | undefined {
   return locators.length ? `${body} (${locators.join("; ")})` : body;
 }
 
+/** The extra lines of a translation unit-mismatch 400 body
+ *  (TranslationUnitsErrorV1: problems / missing_paths / unknown_paths ride
+ *  beside `detail`, whose summary truncates at five entries). */
+function formatUnitErrorBody(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const rec = body as {
+    problems?: unknown;
+    missing_paths?: unknown;
+    unknown_paths?: unknown;
+  };
+  const lines: string[] = [];
+  if (Array.isArray(rec.problems)) {
+    for (const item of rec.problems) {
+      if (item && typeof item === "object") {
+        const p = item as { path?: unknown; code?: unknown; message?: unknown };
+        if (typeof p.path === "string" && typeof p.code === "string") {
+          lines.push(`- ${p.path}: ${p.code} (${String(p.message ?? "")})`);
+        }
+      }
+    }
+  }
+  const paths = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  const missing = paths(rec.missing_paths);
+  if (missing.length) lines.push(`- missing units: ${missing.join(", ")}`);
+  const unknown = paths(rec.unknown_paths);
+  if (unknown.length) lines.push(`- unknown units: ${unknown.join(", ")}`);
+  return lines.length ? lines.join("\n") : undefined;
+}
+
 /** Thin, typed client over the public `/api/v1` surface. One instance per
  *  process, holding the configured base URL + token. */
 export class LingoChunkClient {
@@ -361,6 +483,12 @@ export class LingoChunkClient {
         const body = JSON.parse(raw) as { detail?: unknown; code?: unknown };
         const formatted = formatDetail(body?.detail);
         if (formatted) detail = formatted;
+        // Unit-mismatch 400s (translation editions) carry their full
+        // repair-in-one-pass payload BESIDE detail: per-unit problems and the
+        // exact missing/unknown paths. Append them so the agent never has to
+        // work from the truncated summary line alone.
+        const unitLines = formatUnitErrorBody(body);
+        if (unitLines) detail = `${detail}\n${unitLines}`;
         // A top-level `code` wins; otherwise a structured detail may carry it
         // (guided conflicts put {code, message} in `detail`, not at the top).
         if (typeof body?.code === "string") code = body.code;
@@ -726,6 +854,80 @@ export class LingoChunkClient {
    *  job to completion. */
   getJob(jobId: string): Promise<JobStatus> {
     return this.getJson(`/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  /** Units + sibling/edition state for translating one lesson (the master +
+   *  editions surface). `version` must be echoed as the PUT's base_version. */
+  getLessonTranslationSource(
+    lessonId: string,
+    language: string,
+  ): Promise<LessonTranslationSource> {
+    return this.getJson(
+      `/lessons/${encodeURIComponent(lessonId)}/translation-source`,
+      { language },
+    );
+  }
+
+  /** Create (or machine-replace) the lesson's edition on the sibling. */
+  putLessonTranslation(
+    lessonId: string,
+    language: string,
+    body: {
+      base_version: string;
+      generator?: TranslatorGenerator;
+      units: TranslationUnitPut[];
+    },
+  ): Promise<LessonTranslationResult> {
+    return this.putJson(
+      `/lessons/${encodeURIComponent(lessonId)}/translations/${encodeURIComponent(
+        language,
+      )}`,
+      body,
+    );
+  }
+
+  /** Plan units + per-section state for translating a guided path. */
+  getGuidedTranslationSource(
+    submissionId: string,
+    language: string,
+  ): Promise<GuidedTranslationSource> {
+    return this.getJson(
+      `/submissions/${encodeURIComponent(submissionId)}/guided/translation-source`,
+      { language },
+    );
+  }
+
+  /** Mint the sibling's guided plan from the master's (translated meta). */
+  putGuidedPlanTranslation(
+    submissionId: string,
+    language: string,
+    body: { units: TranslationUnitPut[] },
+  ): Promise<GuidedPlanTranslationResult> {
+    return this.putJson(
+      `/submissions/${encodeURIComponent(submissionId)}/guided/translations/${encodeURIComponent(
+        language,
+      )}`,
+      body,
+    );
+  }
+
+  /** Attach the translated edition of one master part to the sibling plan. */
+  putGuidedSectionTranslation(
+    submissionId: string,
+    index: number,
+    language: string,
+    body: {
+      base_version: string;
+      generator?: TranslatorGenerator;
+      units: TranslationUnitPut[];
+    },
+  ): Promise<GuidedSectionTranslationResult> {
+    return this.putJson(
+      `/submissions/${encodeURIComponent(submissionId)}/guided/sections/${index}/translations/${encodeURIComponent(
+        language,
+      )}`,
+      body,
+    );
   }
 
   /** (g) Delete the draft rows for one language (never a committed sibling). */

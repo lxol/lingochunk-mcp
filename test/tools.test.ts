@@ -115,7 +115,7 @@ function textOf(result: CallToolResult): string {
 }
 
 describe("tool registration", () => {
-  it("registers all thirty-five tools", () => {
+  it("registers all thirty-nine tools", () => {
     expect([...tools.keys()].sort()).toEqual(
       [
         "add_card",
@@ -132,8 +132,10 @@ describe("tool registration", () => {
         "get_audio_url",
         "get_authoring_guide",
         "get_guided_path",
+        "get_guided_translation_source",
         "get_guided_writer_brief",
         "get_lesson",
+        "get_lesson_translation_source",
         "get_transcript",
         "get_translation_source",
         "get_vocabulary",
@@ -145,7 +147,9 @@ describe("tool registration", () => {
         "list_library",
         "lookup_word",
         "plan_guided_path",
+        "put_guided_translation",
         "put_language_translations",
+        "put_lesson_translation",
         "save_lesson",
         "search_examples",
         "submit_guided_lesson",
@@ -1310,6 +1314,109 @@ describe("language tools", () => {
     const text = textOf(result);
     expect(text).toContain("409");
     expect(text).toContain("missing_positions_count");
+  });
+
+  it("get_lesson_translation_source lowercases the language", async () => {
+    mockFetch(
+      jsonResponse({
+        lesson_id: "l1",
+        language: "de",
+        translation_language: "en",
+        target_language: "fr",
+        level: "A1",
+        version: "2026-07-22T00:00:00+00:00",
+        sibling_exists: true,
+        sibling_submission_id: "sib-1",
+        sibling_status: "ready",
+        existing_edition_id: null,
+        existing_edition_edited: false,
+        units: [],
+      }),
+    );
+    await call("get_lesson_translation_source", {
+      lesson_id: "l1",
+      language: " FR ",
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/lessons/l1/translation-source?language=fr",
+    );
+  });
+
+  it("put_lesson_translation PUTs base_version and units verbatim", async () => {
+    mockFetch(
+      jsonResponse({
+        lesson_id: "ed-1",
+        submission_id: "sib-1",
+        language: "fr",
+        replaced: false,
+        unknown_lemmas: [],
+      }),
+    );
+    await call("put_lesson_translation", {
+      lesson_id: "l1",
+      language: "fr",
+      base_version: "2026-07-22T00:00:00+00:00",
+      units: [{ path: "title", text: "FR Titre" }],
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/lessons/l1/translations/fr",
+    );
+    expect(lastInit.method).toBe("PUT");
+    expect(JSON.parse(String(lastInit.body))).toEqual({
+      base_version: "2026-07-22T00:00:00+00:00",
+      units: [{ path: "title", text: "FR Titre" }],
+    });
+  });
+
+  it("put_guided_translation routes plan vs section modes", async () => {
+    mockFetch(
+      jsonResponse({
+        language: "fr",
+        sibling_submission_id: "sib-1",
+        section_count: 3,
+      }),
+    );
+    await call("put_guided_translation", {
+      submission_id: "s1",
+      language: "fr",
+      units: [{ path: "sections.0.title", text: "FR Salutations" }],
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/submissions/s1/guided/translations/fr",
+    );
+
+    mockFetch(
+      jsonResponse({
+        lesson_id: "ed-2",
+        section_index: 0,
+        language: "fr",
+        unknown_lemmas: [],
+      }),
+    );
+    await call("put_guided_translation", {
+      submission_id: "s1",
+      language: "fr",
+      section_index: 0,
+      base_version: "2026-07-22T00:00:00+00:00",
+      units: [{ path: "title", text: "FR Section" }],
+    });
+    expect(lastUrl).toBe(
+      "https://api.test/api/v1/submissions/s1/guided/sections/0/translations/fr",
+    );
+  });
+
+  it("put_guided_translation with section_index but no base_version errors locally", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
+    const result = await call("put_guided_translation", {
+      submission_id: "s1",
+      language: "fr",
+      section_index: 0,
+      units: [{ path: "title", text: "FR Section" }],
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("base_version");
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("discard_language_draft DELETEs the draft and returns the count", async () => {

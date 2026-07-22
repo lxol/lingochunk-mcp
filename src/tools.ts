@@ -1749,6 +1749,237 @@ export function registerTools(
       runJson(() => client.deleteTranslationDraft(submission_id, language)),
   );
 
+  // --- Lesson & guided translation (language editions) ---------------------
+
+  const translationUnitPut = z.object({
+    path: z
+      .string()
+      .min(1)
+      .describe("The unit path exactly as served by the translation source."),
+    text: z
+      .string()
+      .min(1)
+      .describe("Your translated (or passed-through) text for this unit."),
+  });
+
+  const translatorGenerator = z
+    .object({
+      skill: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)
+        .optional()
+        .describe("Translator skill slug (default 'mcp-translation')."),
+      version: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/)
+        .optional()
+        .describe("Translator version."),
+    })
+    .optional()
+    .describe("Self-declared provenance for the edition.");
+
+  server.registerTool(
+    "get_lesson_translation_source",
+    {
+      title: "Get a lesson's translation source",
+      description:
+        "Everything needed to translate ONE lesson into one language: the " +
+        "meta-language strings as path-addressed 'units', plus sibling and " +
+        "edition state. Read the WHOLE document first (get_lesson) for " +
+        "context, then translate only the units. THE CONTRACT: kind " +
+        "'render' = translate faithfully; kind 'adapt' = LOCALISE for the " +
+        "new learner language (grammar explanations and watch-outs, literal " +
+        "glosses, notes, translate cues: re-derive the contrast, swap false-" +
+        "friend warnings, keep glosses word-for-word in the new language's " +
+        "terms). UNIVERSAL RULE, any kind: text already in the lesson's " +
+        "TARGET language must be returned UNCHANGED - B1+ lessons write " +
+        "instructions (B2+: everything) in the target language by design. " +
+        "'passthrough_if_target' flags where that ambiguity is structural " +
+        "(MCQ prompt/options). Respect each unit's max_length; keep " +
+        "**bold**/*italic* marks and never reorder or merge units. " +
+        "'sibling_exists' false means add the language first (add_language " +
+        "or the draft flow); echo 'version' verbatim as the PUT's " +
+        "base_version. Requires the translations:write scope.",
+      inputSchema: {
+        lesson_id: z.string().min(1).describe("The master lesson id."),
+        language: z
+          .string()
+          .min(2)
+          .transform((v) => v.trim().toLowerCase())
+          .describe("The edition (meaning) language to translate into."),
+      },
+    },
+    async ({ lesson_id, language }) =>
+      runJson(() => client.getLessonTranslationSource(lesson_id, language)),
+  );
+
+  server.registerTool(
+    "put_lesson_translation",
+    {
+      title: "Save a lesson's translated edition",
+      description:
+        "Create (or machine-replace) the EDITION of a lesson on the target " +
+        "language's sibling submission, in one request. Send every unit from " +
+        "get_lesson_translation_source exactly once (coverage must be EXACT; " +
+        "400 unit_coverage lists missing/unknown paths, 400 invalid_units " +
+        "lists every unit_empty/unit_too_long/unit_collapsed problem - " +
+        "unit_collapsed means two DISTINCT answer options got the same " +
+        "translation; keep them distinguishable). Target text and structure " +
+        "are copied byte-identical server-side; 422 invalid_document means " +
+        "the sibling's transcript disagrees (fix or re-mint the sibling). " +
+        "409s: stale_document (master changed - re-fetch the source), " +
+        "no_sibling_language, sibling_not_ready, sibling_transcript_drift, " +
+        "translated_copy_edited (a hand-edited edition is never overwritten " +
+        "- use update_lesson on it instead). A machine edition is replaced " +
+        "in place (same lesson id, learner progress survives). Requires the " +
+        "translations:write scope.",
+      inputSchema: {
+        lesson_id: z.string().min(1).describe("The master lesson id."),
+        language: z
+          .string()
+          .min(2)
+          .transform((v) => v.trim().toLowerCase())
+          .describe("The edition language."),
+        base_version: z
+          .string()
+          .min(1)
+          .describe(
+            "The 'version' from get_lesson_translation_source, echoed " +
+              "VERBATIM (never reformat it).",
+          ),
+        generator: translatorGenerator,
+        units: z
+          .array(translationUnitPut)
+          .min(1)
+          .max(2000)
+          .describe("The translated units; exactly the source's paths."),
+      },
+    },
+    async ({ lesson_id, language, base_version, generator, units }) =>
+      runJson(() =>
+        client.putLessonTranslation(lesson_id, language, {
+          base_version,
+          generator,
+          units,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "get_guided_translation_source",
+    {
+      title: "Get a guided path's translation source",
+      description:
+        "Everything needed to translate a guided path into one language: the " +
+        "plan's units (section titles, summaries, skip reasons, function " +
+        "labels, grammar names - grammar names are 'adapt': name the " +
+        "phenomenon the way the new learner language names it) plus per-" +
+        "section state. FLOW: 1) put_guided_translation with the plan units " +
+        "(mints the sibling's plan); 2) for each section with a " +
+        "master_lesson_id, get_lesson_translation_source on that lesson, " +
+        "translate, and put_guided_translation with section_index - any " +
+        "order. The same render/adapt + target-text-unchanged contract as " +
+        "get_lesson_translation_source applies. Requires the " +
+        "translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The MASTER submission id."),
+        language: z
+          .string()
+          .min(2)
+          .transform((v) => v.trim().toLowerCase())
+          .describe("The edition (meaning) language."),
+      },
+    },
+    async ({ submission_id, language }) =>
+      runJson(() => client.getGuidedTranslationSource(submission_id, language)),
+  );
+
+  server.registerTool(
+    "put_guided_translation",
+    {
+      title: "Save a guided path translation (plan or one section)",
+      description:
+        "Two modes on the MASTER submission id. WITHOUT section_index: mint " +
+        "the sibling's guided plan from the master's (send the plan units " +
+        "from get_guided_translation_source; structure is copied verbatim, " +
+        "section lesson links cleared; 409 sibling_plan_exists if the " +
+        "sibling already has any plan - never overwritten). WITH " +
+        "section_index: attach the translated edition of that section's " +
+        "master part (send the units of THAT LESSON from " +
+        "get_lesson_translation_source plus its 'version' as base_version); " +
+        "sections go in any order but the plan must exist first (409 " +
+        "sibling_plan_missing). 409 section_already_translated: improve the " +
+        "existing part via update_lesson instead. The edition lands private " +
+        "in the sibling's own Guided path course, exactly like the writer's " +
+        "parts. Requires the translations:write scope.",
+      inputSchema: {
+        submission_id: z.string().min(1).describe("The MASTER submission id."),
+        language: z
+          .string()
+          .min(2)
+          .transform((v) => v.trim().toLowerCase())
+          .describe("The edition language."),
+        section_index: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Omit to translate the PLAN; set to attach one section's part.",
+          ),
+        base_version: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "REQUIRED with section_index: the master part's 'version' from " +
+              "get_lesson_translation_source, echoed verbatim.",
+          ),
+        generator: translatorGenerator,
+        units: z
+          .array(translationUnitPut)
+          .min(1)
+          .max(2000)
+          .describe("The translated units for the chosen mode."),
+      },
+    },
+    async ({
+      submission_id,
+      language,
+      section_index,
+      base_version,
+      generator,
+      units,
+    }) => {
+      if (section_index === undefined) {
+        return runJson(() =>
+          client.putGuidedPlanTranslation(submission_id, language, { units }),
+        );
+      }
+      if (!base_version) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "section_index needs base_version: the master part's " +
+                "'version' from get_lesson_translation_source.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      return runJson(() =>
+        client.putGuidedSectionTranslation(
+          submission_id,
+          section_index,
+          language,
+          { base_version, generator, units },
+        ),
+      );
+    },
+  );
+
   // --- Creator annotation tools (phase 5) ---------------------------------
 
   server.registerTool(

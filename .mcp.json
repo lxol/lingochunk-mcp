@@ -2,7 +2,7 @@
   "mcpServers": {
     "lingochunk": {
       "command": "npx",
-      "args": ["-y", "@lingochunk/mcp@0.10.0"],
+      "args": ["-y", "@lingochunk/mcp@0.12.0"],
       "env": {
         "LINGOCHUNK_TOKEN": "${LINGOCHUNK_TOKEN}"
       }

@@ -1,6 +1,6 @@
 ---
 name: lingochunk-add-language
-description: Add another language to one of the user's own LingoChunk episodes so it becomes a new sibling deck. Two paths: trigger the server-side fan-out for an ordinary target language (Groq, spends no tokens), or translate the episode yourself sentence by sentence and commit it - the only way to build a leveled same-language deck (e.g. "German (A2)": German audio glossed in simpler A2 German). Use when the user asks to add a language or translation to an episode, translate a lesson into another language, or make a simplified same-language (A1-B2) version of an episode.
+description: Add another language to one of the user's own LingoChunk episodes so it becomes a new sibling deck, and translate the episode's lessons and guided path into that language as EDITIONS. Deck side has two paths: trigger the server-side fan-out for an ordinary target language (Groq, spends no tokens), or translate the episode yourself sentence by sentence and commit it - the only way to build a leveled same-language deck (e.g. "German (A2)"). Lesson/guided side: the edition tools serve the meta-language strings as units you translate or adapt on your own tokens while target text stays byte-identical. Use when the user asks to add a language or translation to an episode, publish lessons or a guided path in another language, or make a simplified same-language (A1-B2) version of an episode.
 ---
 
 # LingoChunk add-language builder
@@ -197,3 +197,61 @@ natively alongside the deck.
   you do not own is a 404. The user's data never goes to any other service.
 - **No audio handling.** The sibling reuses the primary's audio and timings
   untouched; you only supply text.
+
+## Lesson and guided editions (translate lessons, not just decks)
+
+A sibling submission starts with NO lessons and no guided path. The edition
+tools derive them from the master's, on your tokens, with the target-language
+content and every anchor byte-identical by construction: you only ever
+receive the meta-language strings ("units") and can only send text per unit
+path, so dialogue lines, answers, word banks and positions are physically out
+of reach.
+
+Flow for one lesson:
+
+1. `get_lesson` for full context (always read the whole document first).
+2. `get_lesson_translation_source(lesson_id, language)` - the units, the
+   sibling state and the `version` token.
+3. Translate the units (rules below), then
+   `put_lesson_translation(lesson_id, language, base_version=version, units)`.
+4. On 400, EVERY problem is listed (coverage or per-unit); fix them all and
+   retry once. On 409 `stale_document`, the master changed: re-fetch the
+   source and re-translate what moved.
+
+Flow for a guided path: `get_guided_translation_source` first; PUT the plan
+units (no `section_index`), then translate each section's
+`master_lesson_id` through steps 1-3 above but submit with
+`put_guided_translation(..., section_index=N, base_version=<that lesson's
+version>)`. Sections go in any order; a section already translated is
+improved via `update_lesson`, never re-submitted.
+
+### Translation rules (the render/adapt contract)
+
+- **`kind: "render"`** - translate faithfully: instructions, sentence and
+  item translations, vocab meanings, titles, objectives, can-do lines.
+- **`kind: "adapt"`** - LOCALISE for the new learner language, do not
+  translate word-for-word: grammar explanations, Merke/Achtung watch-outs,
+  authorial notes, literal glosses, translate-exercise cues. Re-derive the
+  contrast for the new pair (a cases explanation aimed at English speakers is
+  wrong-footed for Russian speakers), swap false-friend warnings for ones
+  that exist in the new pair, keep literal glosses word-for-word in the new
+  language's terms, keep a meaning-to-target cue phrased so the FIXED target
+  answer stays its natural answer.
+- **UNIVERSAL: target-language text passes through unchanged.** B1+ lessons
+  write instructions - B2+ everything - in the target language by design.
+  If a unit's text is already in the lesson's `language`, return it
+  UNCHANGED, whatever its kind. `passthrough_if_target` marks where this is
+  structural (MCQ prompt/options can quote target text at any level).
+- Respect each unit's `max_length` (translations that run long are rejected,
+  all at once). Keep `**bold**`/`*italic*`/backtick marks intact. Keep MCQ
+  options and match answers DISTINCT (`unit_collapsed` rejects two options
+  that share one translation - an exercise must stay answerable).
+- The sibling must exist and be ready first (`add_language` or the draft
+  path above); `sibling_transcript_drift` means the primary's transcript was
+  edited after the sibling was minted - re-create the language before
+  translating lessons onto it.
+
+Editions keep their lineage (`parent_lesson_id`), so re-running a
+translation REPLACES an unedited machine edition in place (progress
+survives); a hand-edited edition is protected (`translated_copy_edited`) -
+improve it with `update_lesson` instead.
